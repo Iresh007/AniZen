@@ -2,6 +2,7 @@ package eu.kanade.presentation.components
 
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -42,34 +43,33 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tachiyomi.presentation.core.util.clearFocusOnSoftKeyboardHide
 import tachiyomi.presentation.core.util.secondaryItemAlpha
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.Pill
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.clearFocusOnSoftKeyboardHide
 import tachiyomi.presentation.core.util.runOnEnterKeyPressed
-import tachiyomi.presentation.core.util.showSoftKeyboard
 
 const val SEARCH_DEBOUNCE_MILLIS = 250L
 
@@ -320,11 +320,26 @@ fun SearchToolbar(
             val focusManager = LocalFocusManager.current
 
             val searchAndClearFocus: () -> Unit = f@{
-                if (searchQuery.isBlank()) return@f
-                onSearch(searchQuery)
                 focusManager.clearFocus()
                 keyboardController?.hide()
+                if (searchQuery.isBlank()) return@f
+                onSearch(searchQuery)
             }
+
+            val requestKeyboard = rememberSaveable { mutableStateOf(searchQuery.isEmpty()) }
+            LaunchedEffect(focusRequester) {
+                if (requestKeyboard.value) {
+                    focusRequester.requestFocus()
+                    requestKeyboard.value = false
+                }
+            }
+
+            // On Android < P, clearing focus in touch mode makes the framework immediately
+            // hand focus back to the first focusable node in the hierarchy. Buttons are not
+            // focusable in touch mode, so that node is the search text field, which reopens
+            // the keyboard right after every dismissal and can never be closed (#72).
+            // Give that bounced focus a harmless place to land instead.
+            Box(modifier = Modifier.size(1.dp).focusable())
 
             BasicTextField(
                 value = searchQuery,
@@ -333,7 +348,6 @@ fun SearchToolbar(
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
                     .runOnEnterKeyPressed(action = searchAndClearFocus)
-                    .showSoftKeyboard(remember { searchQuery.isEmpty() })
                     .clearFocusOnSoftKeyboardHide(),
                 textStyle = MaterialTheme.typography.titleMedium.copy(
                     color = MaterialTheme.colorScheme.onBackground,
@@ -407,12 +421,7 @@ fun SearchToolbar(
 fun UpIcon(
     navigationIcon: ImageVector? = null,
 ) {
-    val icon = navigationIcon
-        ?: if (LocalLayoutDirection.current == LayoutDirection.Ltr) {
-            Icons.AutoMirrored.Outlined.ArrowBack
-        } else {
-            Icons.AutoMirrored.Outlined.ArrowBack
-        }
+    val icon = navigationIcon ?: Icons.AutoMirrored.Outlined.ArrowBack
     Icon(
         imageVector = icon,
         contentDescription = stringResource(MR.strings.action_webview_back),

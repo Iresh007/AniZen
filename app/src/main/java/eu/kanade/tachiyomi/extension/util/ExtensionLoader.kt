@@ -18,9 +18,12 @@ import eu.kanade.tachiyomi.source.SourceFactory
 import eu.kanade.tachiyomi.util.lang.Hash
 import eu.kanade.tachiyomi.util.storage.copyAndSetReadOnlyTo
 import eu.kanade.tachiyomi.util.system.ChildFirstPathClassLoader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.injectLazy
@@ -122,9 +125,15 @@ object ExtensionLoader {
     /**
      * Return a list of all the available extensions initialized concurrently.
      *
+     * This function is main-safe: PackageManager queries (getInstalledPackages with
+     * signature/metadata flags), APK manifest parsing and dex class loading all happen
+     * on Dispatchers.IO. Calling it from the main thread used to freeze the whole UI
+     * for ~0.5s on mid-range devices (PackageManager binder + parse work), no matter
+     * which screen the user was on.
+     *
      * @param context The application context.
      */
-    suspend fun loadExtensions(context: Context): List<LoadResult> {
+    suspend fun loadExtensions(context: Context): List<LoadResult> = withContext(Dispatchers.IO) {
         val pkgManager = context.packageManager
 
         val installedPkgs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -140,6 +149,8 @@ object ExtensionLoader {
             .filter { isPackageAnExtension(it) }
             .map { ExtensionInfo(packageInfo = it, isShared = true) }
 
+        // Materialized once: this pipeline touches the filesystem and parses each APK's manifest,
+        // so it must not be re-evaluated for every package during deduplication below.
         val privateExtPkgs = getPrivateExtensionDir(context)
             .listFiles()
             ?.asSequence()
@@ -156,23 +167,29 @@ object ExtensionLoader {
             }
             ?.filter { isPackageAnExtension(it) }
             ?.map { ExtensionInfo(packageInfo = it, isShared = false) }
-            ?: emptySequence()
+            ?.toList()
+            .orEmpty()
 
-        val extPkgs = (sharedExtPkgs + privateExtPkgs)
+        // Only unambiguous package names are kept, matching the previous singleOrNull lookup.
+        val privateExtPkgsByName = privateExtPkgs
+            .groupBy { it.packageInfo.packageName }
+            .mapNotNull { (packageName, infos) -> infos.singleOrNull()?.let { packageName to it } }
+            .toMap()
+
+        val extPkgs = (sharedExtPkgs + privateExtPkgs.asSequence())
             // Remove duplicates. Shared takes priority than private by default
             .distinctBy { it.packageInfo.packageName }
             // Compare version number
             .mapNotNull { sharedPkg ->
-                val privatePkg = privateExtPkgs
-                    .singleOrNull { it.packageInfo.packageName == sharedPkg.packageInfo.packageName }
+                val privatePkg = privateExtPkgsByName[sharedPkg.packageInfo.packageName]
                 selectExtensionPackage(sharedPkg, privatePkg)
             }
             .toList()
 
-        if (extPkgs.isEmpty()) return emptyList()
+        if (extPkgs.isEmpty()) return@withContext emptyList()
 
         // Load each extension concurrently and wait for completion
-        return kotlinx.coroutines.coroutineScope {
+        coroutineScope {
             val deferred = extPkgs.map {
                 async { loadExtension(context, it) }
             }
@@ -183,14 +200,16 @@ object ExtensionLoader {
     /**
      * Attempts to load an extension from the given package name. It checks if the extension
      * contains the required feature flag before trying to load it.
+     *
+     * Main-safe: delegates to [loadExtensions]-style IO work (PackageManager + class loading).
      */
-    suspend fun loadExtensionFromPkgName(context: Context, pkgName: String): LoadResult {
+    suspend fun loadExtensionFromPkgName(context: Context, pkgName: String): LoadResult = withContext(Dispatchers.IO) {
         val extensionPackage = getExtensionInfoFromPkgName(context, pkgName)
         if (extensionPackage == null) {
             logcat(LogPriority.ERROR) { "Extension package is not found ($pkgName)" }
-            return LoadResult.Error
+            return@withContext LoadResult.Error
         }
-        return loadExtension(context, extensionPackage)
+        loadExtension(context, extensionPackage)
     }
 
     fun getExtensionPackageInfoFromPkgName(context: Context, pkgName: String): PackageInfo? {

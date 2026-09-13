@@ -64,9 +64,6 @@ import eu.kanade.tachiyomi.ui.player.cast.components.CastButton
 import eu.kanade.tachiyomi.ui.player.controls.components.AutoPlaySwitch
 import eu.kanade.tachiyomi.ui.player.controls.components.ControlsButton
 import eu.kanade.tachiyomi.ui.player.controls.components.CurrentChapter
-import eu.kanade.tachiyomi.ui.player.controls.components.FilledControlsButton
-import eu.kanade.tachiyomi.ui.player.execute
-import eu.kanade.tachiyomi.ui.player.executeLongPress
 import eu.kanade.tachiyomi.ui.player.getIcon
 import `is`.xyz.mpv.MPVLib
 import tachiyomi.i18n.MR
@@ -81,7 +78,6 @@ fun RenderPlayerButton(
     castManager: CastManager,
     onBackPress: () -> Unit,
     onCastClick: () -> Unit,
-    containerButtons: List<PlayerButton> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     val autoPlayEnabled by viewModel.playerPreferences.autoplayEnabled().collectAsState()
@@ -91,10 +87,6 @@ fun RenderPlayerButton(
     val videoZoom by viewModel.videoZoom.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val currentChapter by viewModel.currentChapter.collectAsState()
-    val skipIntroButton by viewModel.skipIntroText.collectAsState()
-    val customButtonTitle by viewModel.primaryButtonTitle.collectAsState()
-    val customButton by viewModel.primaryButton.collectAsState()
-    val hasSkipIntroInLayout = containerButtons.contains(PlayerButton.SkipIntro)
 
     when (button) {
         PlayerButton.BackArrow -> {
@@ -292,31 +284,8 @@ fun RenderPlayerButton(
                 )
             }
         }
-        PlayerButton.SkipIntro -> {
-            if (skipIntroButton != null) {
-                FilledControlsButton(
-                    text = skipIntroButton!!,
-                    onClick = viewModel::onSkipIntro,
-                    onLongClick = viewModel::onSkipIntro,
-                )
-            }
-        }
-        PlayerButton.CustomButton -> {
-            if (skipIntroButton != null) {
-                if (!hasSkipIntroInLayout) {
-                    FilledControlsButton(
-                        text = skipIntroButton!!,
-                        onClick = viewModel::onSkipIntro,
-                        onLongClick = viewModel::onSkipIntro,
-                    )
-                }
-            } else if (customButton != null && customButtonTitle != null) {
-                FilledControlsButton(
-                    text = customButtonTitle!!,
-                    onClick = { customButton!!.execute() },
-                    onLongClick = { customButton!!.executeLongPress() },
-                )
-            }
-        }
+        // The skip intro prompt and custom action button render above the seekbar in PlayerControls
+        PlayerButton.SkipIntro -> Unit
+        PlayerButton.CustomButton -> Unit
     }
 }

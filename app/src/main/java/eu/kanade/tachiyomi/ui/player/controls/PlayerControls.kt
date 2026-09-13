@@ -18,6 +18,8 @@
 package eu.kanade.tachiyomi.ui.player.controls
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -31,7 +33,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
@@ -54,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import eu.kanade.presentation.more.settings.screen.player.custombutton.getButtons
@@ -64,6 +69,8 @@ import eu.kanade.tachiyomi.ui.player.Panels
 import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.PlayerUpdates
 import eu.kanade.tachiyomi.ui.player.PlayerViewModel
+import eu.kanade.tachiyomi.ui.player.execute
+import eu.kanade.tachiyomi.ui.player.executeLongPress
 import eu.kanade.tachiyomi.ui.player.controls.components.DoubleTapToSeekOvals
 import eu.kanade.tachiyomi.ui.player.Sheets
 import eu.kanade.tachiyomi.ui.player.VideoAspect
@@ -72,7 +79,9 @@ import eu.kanade.tachiyomi.ui.player.controls.components.BrightnessOverlay
 import eu.kanade.tachiyomi.ui.player.controls.components.BrightnessSlider
 import eu.kanade.tachiyomi.ui.player.controls.components.ControlsButton
 import eu.kanade.tachiyomi.ui.player.controls.components.DoubleSpeedPlayerUpdate
+import eu.kanade.tachiyomi.ui.player.controls.components.FilledControlsButton
 import eu.kanade.tachiyomi.ui.player.controls.components.SeekbarWithTimers
+import eu.kanade.tachiyomi.ui.player.controls.components.videoTimerWidth
 import eu.kanade.tachiyomi.ui.player.controls.components.ThumbnailPreview
 import eu.kanade.tachiyomi.ui.player.controls.components.TextPlayerUpdate
 import eu.kanade.tachiyomi.ui.player.controls.components.VolumeSlider
@@ -97,6 +106,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import android.content.res.Configuration
 import eu.kanade.tachiyomi.ui.player.PlayerButton
 import eu.kanade.tachiyomi.ui.player.parseButtons
@@ -431,10 +441,56 @@ fun PlayerControls(
                         fadeOut(playerControlsExitAnimationSpec())
                     },
                     modifier = Modifier.constrainAs(seekbar) {
-                        bottom.linkTo(parent.bottom, spacing.medium)
-                    },
+                        if (isLandscape) {
+                            bottom.linkTo(bottomLeftControls.top)
+                        } else {
+                            bottom.linkTo(portraitBottomBar.top)
+                        }
+                    }.offset(y = spacing.medium),
                 ) {
-                    val invertDuration by playerPreferences.invertDuration().collectAsState()
+                    Column {
+                        // Skip intro prompt / custom action button, anchored to the seekbar:
+                        // it slides in and out with it, right edge aligned with the duration
+                        // time text, body extending left of it
+                        val skipIntroButton by viewModel.skipIntroText.collectAsState()
+                        val customButtonTitle by viewModel.primaryButtonTitle.collectAsState()
+                        val actionButton = customButton
+                        // Ink width of the duration time text, reported by the seekbar's timer;
+                        // the text is centered in its slot, so its right edge sits
+                        // (slotWidth - inkWidth) / 2 left of the slot's right edge
+                        var durationInkWidthPx by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+                        val pillEndInset = with(LocalDensity.current) {
+                            (videoTimerWidth - durationInkWidthPx.toDp()) / 2
+                        }.coerceAtLeast(0.dp)
+                        AnimatedVisibility(
+                            visible = skipIntroButton != null ||
+                                (actionButton != null && customButtonTitle.isNotEmpty()),
+                            enter = fadeIn(playerControlsEnterAnimationSpec()) +
+                                expandVertically(expandFrom = Alignment.Bottom),
+                            exit = fadeOut(playerControlsExitAnimationSpec()) +
+                                shrinkVertically(shrinkTowards = Alignment.Bottom),
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(end = pillEndInset)
+                                .offset(y = spacing.small),
+                        ) {
+                            val skipIntroLabel = skipIntroButton
+                            if (skipIntroLabel != null) {
+                                FilledControlsButton(
+                                    text = skipIntroLabel,
+                                    onClick = viewModel::onSkipIntro,
+                                    onLongClick = viewModel::onSkipIntro,
+                                )
+                            } else if (actionButton != null && customButtonTitle.isNotEmpty()) {
+                                FilledControlsButton(
+                                    text = customButtonTitle,
+                                    onClick = { actionButton.execute() },
+                                    onLongClick = { actionButton.executeLongPress() },
+                                )
+                            }
+                        }
+
+                        val invertDuration by playerPreferences.invertDuration().collectAsState()
                     val readAhead by viewModel.readAhead.collectAsState()
                     val preciseSeeking by gesturePreferences.playerSmoothSeek().collectAsState()
 
@@ -495,8 +551,15 @@ fun PlayerControls(
                         timersInverted = Pair(false, invertDuration),
                         durationTimerOnCLick = { playerPreferences.invertDuration().set(!invertDuration) },
                         positionTimerOnClick = {},
+                        onDurationTextLayout = { layoutResult ->
+                            if (layoutResult.lineCount > 0) {
+                                durationInkWidthPx =
+                                    layoutResult.getLineRight(0) - layoutResult.getLineLeft(0)
+                            }
+                        },
                         chapters = chaptersList,
                     )
+                    }
                 }
                 val mediaTitle by viewModel.mediaTitle.collectAsState()
                 val animeTitle by viewModel.animeTitle.collectAsState()
@@ -565,7 +628,7 @@ fun PlayerControls(
                     enter = fadeIn(),
                     exit = fadeOut(),
                     modifier = Modifier.constrainAs(portraitBottomBar) {
-                        bottom.linkTo(seekbar.top, spacing.medium)
+                        bottom.linkTo(parent.bottom, spacing.medium)
                         start.linkTo(parent.start)
                         end.linkTo(parent.end)
                         width = Dimension.fillToConstraints
@@ -585,7 +648,6 @@ fun PlayerControls(
                                 castManager = castManager,
                                 onBackPress = onBackPress,
                                 onCastClick = { showCastSheet = true },
-                                containerButtons = portraitBottomButtonsList,
                             )
                         }
                     }
@@ -607,7 +669,7 @@ fun PlayerControls(
                         fadeOut(playerControlsExitAnimationSpec())
                     },
                     modifier = Modifier.constrainAs(bottomRightControls) {
-                        bottom.linkTo(seekbar.top)
+                        bottom.linkTo(parent.bottom, spacing.medium)
                         end.linkTo(seekbar.end)
                     },
                 ) {
@@ -635,7 +697,7 @@ fun PlayerControls(
                         fadeOut(playerControlsExitAnimationSpec())
                     },
                     modifier = Modifier.constrainAs(bottomLeftControls) {
-                        bottom.linkTo(seekbar.top)
+                        bottom.linkTo(parent.bottom, spacing.medium)
                         start.linkTo(seekbar.start)
                         width = Dimension.fillToConstraints
                         end.linkTo(bottomRightControls.start)
