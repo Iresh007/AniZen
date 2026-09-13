@@ -3,6 +3,21 @@
 -allowaccessmodification
 -repackageclasses ''
 
+# ANZ -->
+# Extension ABI: keep Hoster/Video constructors + copy() overloads.
+# -keep on eu.kanade.** keeps classes, not members; R8 may strip the
+# HIDDEN lib-compat secondary constructors (only called by extension APKs
+# at runtime, invisible to the optimizer), re-creating the NoSuchMethodError.
+-keepclassmembers class eu.kanade.tachiyomi.animesource.model.Hoster {
+    public <init>(...);
+    public *** copy(...);
+}
+-keepclassmembers class eu.kanade.tachiyomi.animesource.model.Video {
+    public <init>(...);
+    public *** copy(...);
+}
+# ANZ <--
+
 # Protect extension compatibility classes
 -keep class **$DefaultImpls { *; }
 

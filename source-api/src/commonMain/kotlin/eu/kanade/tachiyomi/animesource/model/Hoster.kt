@@ -28,6 +28,27 @@ open class Hoster(
         ERROR,
     }
 
+    // ANZ -->
+    // Ext lib compat: 4-arg (pre-lazy) secondary — matches aniyomi-lib e9a4fbaf77
+    // whose synthetic is <init>(String,String,List,String,I,DefaultConstructorMarker).
+    // Extensions compiled against the lib call Hoster(hosterName, hosterUrl) which
+    // resolves to that 4-arg secondary; without it the app throws NoSuchMethodError.
+    @Deprecated("Used only for compatibility with ext lib, do not use", level = DeprecationLevel.HIDDEN)
+    constructor(
+        hosterUrl: String = "",
+        hosterName: String = "",
+        videoList: List<Video>? = null,
+        internalData: String = "",
+    ) : this(
+        hosterUrl = hosterUrl,
+        hosterName = hosterName,
+        videoList = videoList,
+        internalData = internalData,
+        lazy = false,
+        memo = JsonObject.EMPTY,
+    )
+    // ANZ <--
+
     // Ext lib 16 constructor
     @Deprecated("Used only for compatibility with ext lib 16, do not use", level = DeprecationLevel.HIDDEN)
     constructor(
