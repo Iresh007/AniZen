@@ -15,7 +15,8 @@ interface AnimeCatalogueSource : AnimeSource {
     /**
      * Whether the source has support for latest updates.
      */
-    val supportsLatest: Boolean
+    // ANZ -->
+    override val supportsLatest: Boolean
 
     /**
      * Get a page with a list of anime.
@@ -24,7 +25,7 @@ interface AnimeCatalogueSource : AnimeSource {
      * @param page the page number to retrieve.
      */
     @Suppress("DEPRECATION")
-    suspend fun getPopularAnime(page: Int): AnimesPage {
+    override suspend fun getPopularAnime(page: Int): AnimesPage {
         return fetchPopularAnime(page).awaitSingle()
     }
 
@@ -37,7 +38,7 @@ interface AnimeCatalogueSource : AnimeSource {
      * @param filters the list of filters to apply.
      */
     @Suppress("DEPRECATION")
-    suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
+    override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
         return fetchSearchAnime(page, query, filters).awaitSingle()
     }
 
@@ -48,14 +49,39 @@ interface AnimeCatalogueSource : AnimeSource {
      * @param page the page number to retrieve.
      */
     @Suppress("DEPRECATION")
-    suspend fun getLatestUpdates(page: Int): AnimesPage {
+    override suspend fun getLatestUpdates(page: Int): AnimesPage {
         return fetchLatestUpdates(page).awaitSingle()
     }
 
     /**
      * Returns the list of filters for the source.
      */
-    fun getFilterList(): AnimeFilterList
+    override fun getFilterList(): AnimeFilterList
+
+    @Suppress("DEPRECATION")
+    override suspend fun getAnimeEpisodeUpdate(
+        anime: eu.kanade.tachiyomi.animesource.model.SAnime,
+        episodes: List<eu.kanade.tachiyomi.animesource.model.SEpisode>,
+        fetchDetails: Boolean,
+        fetchEpisodes: Boolean,
+    ): eu.kanade.tachiyomi.animesource.model.SAnimeEpisodeUpdate = kotlinx.coroutines.supervisorScope {
+        val asyncAnime = if (fetchDetails) kotlinx.coroutines.async { getAnimeDetails(anime) } else null
+        val asyncEpisodes = if (fetchEpisodes) kotlinx.coroutines.async { getEpisodeList(anime) } else null
+        eu.kanade.tachiyomi.animesource.model.SAnimeEpisodeUpdate(asyncAnime?.await() ?: anime, asyncEpisodes?.await() ?: episodes)
+    }
+
+    @Suppress("DEPRECATION")
+    override suspend fun getAnimeSeasonUpdate(
+        anime: eu.kanade.tachiyomi.animesource.model.SAnime,
+        seasons: List<eu.kanade.tachiyomi.animesource.model.SAnime>,
+        fetchDetails: Boolean,
+        fetchSeasons: Boolean,
+    ): eu.kanade.tachiyomi.animesource.model.SAnimeSeasonUpdate = kotlinx.coroutines.supervisorScope {
+        val asyncAnime = if (fetchDetails) kotlinx.coroutines.async { getAnimeDetails(anime) } else null
+        val asyncSeasons = if (fetchSeasons) kotlinx.coroutines.async { getSeasonList(anime) } else null
+        eu.kanade.tachiyomi.animesource.model.SAnimeSeasonUpdate(asyncAnime?.await() ?: anime, asyncSeasons?.await() ?: seasons)
+    }
+    // ANZ <--
 
     // Should be replaced as soon as Anime Extension reach 1.5
     @Deprecated(

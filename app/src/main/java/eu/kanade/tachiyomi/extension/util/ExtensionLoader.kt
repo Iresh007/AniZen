@@ -279,25 +279,28 @@ object ExtensionLoader {
         }
 
         // Validate lib version
+        // ANZ -->
         val libVersion = (
-            appInfo.metaData?.get(METADATA_EXTENSION_LIB)
-                ?: appInfo.metaData?.get("tachiyomix.extensionLib")
-        )?.let {
-            when (it) {
-                is Int -> if (it != 0) it.toDouble() else null
-                is Float -> it.toDouble()
-                is Double -> it
-                is String -> it.toDoubleOrNull()
-                else -> null
-            }
-        } ?: versionName.substringBeforeLast('.').toDoubleOrNull()
-        if (libVersion == null || libVersion < LIB_VERSION_MIN || libVersion > LIB_VERSION_MAX) {
+            appInfo.metaData?.getInt(METADATA_EXTENSION_LIB)?.takeUnless { it == 0 }?.toDouble()
+                ?: appInfo.metaData?.getInt("tachiyomix.extensionLib")?.takeUnless { it == 0 }?.toDouble()
+                ?: (appInfo.metaData?.get(METADATA_EXTENSION_LIB) ?: appInfo.metaData?.get("tachiyomix.extensionLib"))?.let {
+                    when (it) {
+                        is Int -> if (it != 0) it.toDouble() else null
+                        is Float -> it.toDouble()
+                        is Double -> it
+                        is String -> it.toDoubleOrNull()
+                        else -> null
+                    }
+                }
+        ) ?: versionName.substringBeforeLast('.').toDoubleOrNull()
+        if (libVersion == null || libVersion < LIB_VERSION_MIN || libVersion >= LIB_VERSION_MAX + 1.0) {
             logcat(LogPriority.WARN) {
                 "Lib version is $libVersion, while only versions " +
                     "$LIB_VERSION_MIN to $LIB_VERSION_MAX are allowed"
             }
             return LoadResult.Error
         }
+        // ANZ <--
 
         val signatures = getSignatures(pkgInfo)
         if (signatures.isNullOrEmpty()) {
