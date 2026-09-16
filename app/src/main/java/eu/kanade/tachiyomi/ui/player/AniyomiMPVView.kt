@@ -109,10 +109,7 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         val (maxMb, maxBackMb, readahead) = when (tier) {
             DeviceTierManager.Tier.LOW -> Triple(64, 32, 60)
             DeviceTierManager.Tier.MID -> Triple(128, 64, 120)
-            DeviceTierManager.Tier.HIGH -> {
-                mpv?.setOptionString("hwdec-extra-frames", "24")
-                Triple(192, 128, 180)
-            }
+            DeviceTierManager.Tier.HIGH -> Triple(192, 128, 180)
         }
 
         currentMaxBytes = maxMb * 1024 * 1024L
@@ -145,13 +142,9 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         mpv?.setPropertyBoolean("pause", true)
         setSafeOptionString("profile", "fast")
 
-        val isSmoothMotion = decoderPreferences.smoothMotion().get()
-        val defaultHwdec = if (decoderPreferences.tryHWDecoding().get()) {
-            if (isSmoothMotion) "mediacodec-copy" else "mediacodec,mediacodec-copy"
-        } else {
-            "no"
-        }
-        mpv?.setOptionString("hwdec", defaultHwdec)
+        // ANZ -->
+        mpv?.setOptionString("hwdec", if (decoderPreferences.tryHWDecoding().get()) "auto" else "no")
+        // ANZ <--
 
         // Scaling quality
         val isHighQuality = decoderPreferences.highQualityScaling().get()

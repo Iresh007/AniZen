@@ -682,9 +682,11 @@ class PlayerViewModel @JvmOverloads constructor(
             updateSubtitleTrackAt(idx) {
                 it.copy(id = track.id, state = TrackState.Loaded)
             }
+            // ANZ -->
+            selectSubById(track.id)
             hasLoadedSubs.update { _ -> true }
             checkFileLoaded()
-            selectSubById(track.id)
+            // ANZ <--
         }
 
         externalAudio.forEach { track ->
@@ -702,9 +704,11 @@ class PlayerViewModel @JvmOverloads constructor(
             updateAudioTrackAt(idx) {
                 it.copy(id = track.id, state = TrackState.Loaded)
             }
+            // ANZ -->
+            selectAudioById(track.id)
             hasLoadedAudio.update { _ -> true }
             checkFileLoaded()
-            selectAudioById(track.id)
+            // ANZ <--
         }
     }
 
@@ -809,15 +813,19 @@ class PlayerViewModel @JvmOverloads constructor(
                         )
                     }
                 } else {
+                    // ANZ -->
+                    selectSubById(track.id)
                     hasLoadedSubs.update { _ -> true }
                     checkFileLoaded()
-                    selectSubById(track.id)
+                    // ANZ <--
                 }
             }
             is VideoTrack.Internal -> {
+                // ANZ -->
+                selectSubById(track.data.id)
                 hasLoadedSubs.update { _ -> true }
                 checkFileLoaded()
-                selectSubById(track.data.id)
+                // ANZ <--
             }
         }
     }
@@ -838,15 +846,19 @@ class PlayerViewModel @JvmOverloads constructor(
                         )
                     }
                 } else {
+                    // ANZ -->
+                    selectAudioById(track.id)
                     hasLoadedAudio.update { _ -> true }
                     checkFileLoaded()
-                    selectAudioById(track.id)
+                    // ANZ <--
                 }
             }
             is VideoTrack.Internal -> {
+                // ANZ -->
+                selectAudioById(track.data.id)
                 hasLoadedAudio.update { _ -> true }
                 checkFileLoaded()
-                selectAudioById(track.data.id)
+                // ANZ <--
             }
         }
     }
