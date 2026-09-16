@@ -13,27 +13,33 @@ class PlayerObserver(val activity: PlayerActivity) :
     MPV.LogObserver {
 
     override fun eventProperty(property: String) {
-        activity.runOnUiThread { activity.onObserverEvent(property) }
     }
 
     override fun eventProperty(property: String, value: Long) {
-        activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        if (property == "vo-delayed-frame-count") {
+            activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        }
     }
 
     override fun eventProperty(property: String, value: Boolean) {
-        activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        if (property == "pause" || property == "eof-reached") {
+            activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        }
     }
 
     override fun eventProperty(property: String, value: String) {
-        activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        if (property.startsWith("user-data/aniyomi")) {
+            activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        }
     }
 
     override fun eventProperty(property: String, value: Double) {
-        activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        if (property == "video-params/aspect") {
+            activity.runOnUiThread { activity.onObserverEvent(property, value) }
+        }
     }
 
     override fun eventProperty(property: String, value: MPVNode) {
-        activity.runOnUiThread { activity.onObserverEvent(property, value) }
     }
 
     override fun event(eventId: Int, data: MPVNode) {

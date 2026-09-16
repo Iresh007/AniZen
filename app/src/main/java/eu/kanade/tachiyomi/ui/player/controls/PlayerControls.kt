@@ -140,11 +140,18 @@ fun PlayerControls(
     val seekBarShown by viewModel.seekBarShown.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val pausedForCache by viewModel.pausedForCache.collectAsState()
+    // ANZ -->
+    val coreIdle by viewModel.coreIdle.collectAsState()
+    val seeking by viewModel.seeking.collectAsState()
+    // ANZ <--
     val isLoadingEpisode by viewModel.isLoadingEpisode.collectAsState()
     val isStopped by viewModel.isStopped.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val position by viewModel.pos.collectAsState()
     val paused by viewModel.paused.collectAsState()
+    // ANZ -->
+    val showLoadingCircle by playerPreferences.showLoadingCircle().collectAsState()
+    // ANZ <--
     val gestureSeekAmount by viewModel.gestureSeekAmount.collectAsState()
     val doubleTapSeekAmount by viewModel.doubleTapSeekAmount.collectAsState()
     val showDoubleTapOvals by playerPreferences.showDoubleTapOvals().collectAsState()
@@ -161,6 +168,12 @@ fun PlayerControls(
     val playerTimeToDisappear by playerPreferences.playerTimeToDisappear().collectAsState()
     var resetControls by remember { mutableStateOf(true) }
     val isSeekingUI by viewModel.isSeekingUI.collectAsState()
+    // ANZ -->
+    val isBuffering = (pausedForCache == true) ||
+        (seeking == true && !isSeekingUI) ||
+        (coreIdle == true && paused == false && !isSeekingUI)
+    val isPlayerLoading = isLoading || isBuffering
+    // ANZ <--
     val seekPosition by viewModel.seekPosition.collectAsState()
     val chaptersList = chapters
 
@@ -396,10 +409,11 @@ fun PlayerControls(
                     )
                 }
                 val isLongPressing by viewModel.isLongPressing.collectAsState()
-                 AnimatedVisibility(
+                // ANZ -->
+                AnimatedVisibility(
                     visible = (
                         (controlsShown && !areControlsLocked || gestureSeekAmount != null) ||
-                            ((isLoading || pausedForCache == true) && !isStopped) ||
+                            (isPlayerLoading && !isStopped) ||
                             isLoadingEpisode
                         ) && !isLongPressing,
                     enter = fadeIn(playerControlsEnterAnimationSpec()),
@@ -411,14 +425,13 @@ fun PlayerControls(
                         bottom.linkTo(parent.bottom)
                     },
                 ) {
-                    val showLoadingCircle by playerPreferences.showLoadingCircle().collectAsState()
                     MiddlePlayerControls(
                         hasPrevious = hasPreviousEpisode,
                         onSkipPrevious = { viewModel.changeEpisode(true) },
                         hasNext = hasNextEpisode,
                         onSkipNext = { viewModel.changeEpisode(false) },
                         isStopped = isStopped,
-                        isLoading = isLoading || pausedForCache == true,
+                        isLoading = isPlayerLoading,
                         isLoadingEpisode = isLoadingEpisode,
                         controlsShown = controlsShown,
                         areControlsLocked = areControlsLocked,
@@ -430,6 +443,7 @@ fun PlayerControls(
                         exit = fadeOut(playerControlsExitAnimationSpec()),
                     )
                 }
+                // ANZ <--
                 AnimatedVisibility(
                     visible = (controlsShown || seekBarShown) && !areControlsLocked && !isLongPressing,
                     enter = if (!reduceMotion) {

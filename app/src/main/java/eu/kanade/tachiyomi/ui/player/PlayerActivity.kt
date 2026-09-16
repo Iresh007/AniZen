@@ -250,14 +250,14 @@ class PlayerActivity : BaseActivity() {
 
             viewModel.updateIsLoadingHosters(false)
 
-            lifecycleScope.launch {
-                viewModel.loadHosters(
-                    source = viewModel.currentSource.value!!,
-                    hosterList = initResult.first.hosterList ?: emptyList(),
-                    hosterIndex = initResult.first.videoIndex.first,
-                    videoIndex = initResult.first.videoIndex.second,
-                )
-            }
+            // ANZ -->
+            viewModel.loadHosters(
+                source = viewModel.currentSource.value!!,
+                hosterList = initResult.first.hosterList ?: emptyList(),
+                hosterIndex = initResult.first.videoIndex.first,
+                videoIndex = initResult.first.videoIndex.second,
+            )
+            // ANZ <--
         }
 
         setIntent(intent)
@@ -1075,7 +1075,8 @@ class PlayerActivity : BaseActivity() {
         viewModel.isLoading.update { _ -> true }
         viewModel.resetHosterState()
 
-        lifecycleScope.launch {
+        // ANZ -->
+        lifecycleScope.launchIO {
             viewModel.updateIsLoadingEpisode(true)
             viewModel.updateIsLoadingHosters(true)
             viewModel.cancelHosterVideoLinksJob()
@@ -1096,12 +1097,14 @@ class PlayerActivity : BaseActivity() {
                 else -> {
                     if (switchMethod.hosterList != null) {
                         when {
-                            switchMethod.hosterList.isEmpty() -> setInitialEpisodeError(
-                                PlayerViewModel.ExceptionWithStringResource(
-                                    "Hoster list is empty",
-                                    MR.strings.no_hosters,
-                                ),
-                            )
+                            switchMethod.hosterList.isEmpty() -> withUIContext {
+                                setInitialEpisodeError(
+                                    PlayerViewModel.ExceptionWithStringResource(
+                                        "Hoster list is empty",
+                                        MR.strings.no_hosters,
+                                    ),
+                                )
+                            }
                             else -> {
                                 viewModel.loadHosters(
                                     source = switchMethod.source,
@@ -1121,6 +1124,7 @@ class PlayerActivity : BaseActivity() {
                 }
             }
         }
+        // ANZ <--
 
         viewModel.updateHasPreviousEpisode(
             viewModel.getCurrentEpisodeIndex() != 0,

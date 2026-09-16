@@ -339,6 +339,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val pausedForCache: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("paused-for-cache")
     val coreIdle: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("core-idle")
+    // ANZ -->
+    val seeking: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("seeking")
+    // ANZ <--
     val isLoadingTracks = MutableStateFlow(false)
 
     private val _thumbnailImage = MutableStateFlow<ImageBitmap?>(null)

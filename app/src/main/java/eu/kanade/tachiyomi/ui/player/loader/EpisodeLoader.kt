@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.domain.anime.model.Anime
 import tachiyomi.domain.episode.model.Episode
 import tachiyomi.source.localanime.LocalAnimeSource
@@ -105,17 +106,20 @@ class EpisodeLoader {
          * @param episode the episode being parsed.
          * @param source the online source of the episode.
          */
+        // ANZ -->
         private suspend fun getHostersOnHttp(episode: Episode, source: AnimeHttpSource): List<Hoster> {
-            // TODO(1.6): Remove else block when dropping support for ext lib <1.6
-            return if (checkHasHosters(source)) {
-                source.getHosterList(episode.toSEpisode())
-                    .let { source.run { it.sortHosters() } }
-            } else {
-                source.getVideoList(episode.toSEpisode())
-                    .let { source.run { it.sortVideos() } }
-                    .toHosterList()
+            return withIOContext {
+                if (checkHasHosters(source)) {
+                    source.getHosterList(episode.toSEpisode())
+                        .let { source.run { it.sortHosters() } }
+                } else {
+                    source.getVideoList(episode.toSEpisode())
+                        .let { source.run { it.sortVideos() } }
+                        .toHosterList()
+                }
             }
         }
+        // ANZ <--
 
         /**
          * Returns the hoster when the [episode] is downloaded.
@@ -211,10 +215,14 @@ class EpisodeLoader {
          * @param source the online source of the episode.
          * @param hoster the hoster.
          */
+        // ANZ -->
         private suspend fun getVideosOnHttp(source: AnimeHttpSource, hoster: Hoster): List<Video> {
-            return source.getVideoList(hoster)
-                .parseVideoUrls(source)
+            return withIOContext {
+                source.getVideoList(hoster)
+                    .parseVideoUrls(source)
+            }
         }
+        // ANZ <--
 
         // TODO(1.6): Remove after ext lib bump
         private suspend fun List<Video>.parseVideoUrls(source: AnimeHttpSource): List<Video> {
