@@ -256,7 +256,6 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         mpv?.setOptionString("cookies", "yes")
         mpv?.setOptionString("cache", "yes")
         mpv?.setOptionString("demuxer-thread", "yes")
-        mpv?.setOptionString("demuxer-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5")
 
         val cacheMegs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) 64 else 32
         mpv?.setOptionString("demuxer-max-bytes", "${cacheMegs * 1024 * 1024}")

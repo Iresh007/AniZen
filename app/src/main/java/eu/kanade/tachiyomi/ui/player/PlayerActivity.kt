@@ -1604,10 +1604,6 @@ class PlayerActivity : BaseActivity() {
             headers["User-Agent"] = networkHelper.defaultUserAgentProvider()
         }
 
-        if (headers["Connection"].isNullOrEmpty()) {
-            headers["Connection"] = "keep-alive"
-        }
-
         val httpHeaderString = headers.map {
             it.key + ": " + it.value.replace(",", "\\,")
         }.joinToString(",")

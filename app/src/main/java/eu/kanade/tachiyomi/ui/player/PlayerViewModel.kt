@@ -2303,7 +2303,9 @@ class PlayerViewModel @JvmOverloads constructor(
             loadThumbnails(resolvedVideo, source)
         }
 
-        activity.setVideo(resolvedVideo, position = if (resumePosition != null && resumePosition > 5000L) resumePosition else null)
+        // ANZ -->
+        activity.setVideo(resolvedVideo, position = if (resumePosition != null && resumePosition > 0L) resumePosition else null)
+        // ANZ <--
         return true
     }
 
