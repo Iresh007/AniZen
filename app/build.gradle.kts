@@ -424,6 +424,12 @@ androidComponents {
     }
 }
 
+// ANZ -->
+aboutLibraries {
+    offlineMode = true
+}
+// ANZ <--
+
 buildscript {
     dependencies {
         classpath(kotlinx.gradle)
