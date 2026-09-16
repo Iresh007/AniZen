@@ -487,7 +487,7 @@ class PlayerViewModel @JvmOverloads constructor(
     val getTrackLanguage: (Int) -> String = {
         if (it != -1) {
             // ANZ -->
-            mpv.getPropertyString("track-list/$it/lang") ?: ""
+            safeMpvCall { mpv -> mpv.getPropertyString("track-list/$it/lang") } ?: ""
             // ANZ <--
         } else {
             activity.stringResource(MR.strings.off)
@@ -496,7 +496,7 @@ class PlayerViewModel @JvmOverloads constructor(
     val getTrackTitle: (Int) -> String = {
         if (it != -1) {
             // ANZ -->
-            mpv.getPropertyString("track-list/$it/title") ?: ""
+            safeMpvCall { mpv -> mpv.getPropertyString("track-list/$it/title") } ?: ""
             // ANZ <--
         } else {
             activity.stringResource(MR.strings.off)
@@ -505,7 +505,7 @@ class PlayerViewModel @JvmOverloads constructor(
     val getTrackMPVId: (Int) -> Int? = {
         if (it != -1) {
             // ANZ -->
-            mpv.getPropertyInt("track-list/$it/id")
+            safeMpvCall { mpv -> mpv.getPropertyInt("track-list/$it/id") }
             // ANZ <--
         } else {
             -1
@@ -513,7 +513,7 @@ class PlayerViewModel @JvmOverloads constructor(
     }
     val getTrackType: (Int) -> String? = {
         // ANZ -->
-        mpv.getPropertyString("track-list/$it/type")
+        safeMpvCall { mpv -> mpv.getPropertyString("track-list/$it/type") }
         // ANZ <--
     }
 
@@ -525,15 +525,15 @@ class PlayerViewModel @JvmOverloads constructor(
     private var trackLoadingJob: Job? = null
     fun loadTracks() {
         trackLoadingJob?.cancel()
-        trackLoadingJob = viewModelScope.launch {
+        // ANZ -->
+        trackLoadingJob = viewModelScope.launchIO {
             val possibleTrackTypes = listOf("audio", "sub")
             val subTracks = mutableListOf<VideoTrack>()
             val audioTracks = mutableListOf<VideoTrack>(
                 VideoTrack.Internal(-1, activity.stringResource(MR.strings.off), null),
             )
             try {
-                // ANZ -->
-                val tracksCount = mpv.getPropertyInt("track-list/count") ?: 0
+                val tracksCount = safeMpvCall { mpv -> mpv.getPropertyInt("track-list/count") } ?: 0
                 // ANZ <--
                 // Collect all MPV track names and IDs — Animiru matches externals by URL stored as name
                 val mpvSubNameToId = mutableMapOf<String, Int>()
@@ -736,11 +736,11 @@ class PlayerViewModel @JvmOverloads constructor(
     fun loadChapters() {
         val chapters = mutableListOf<IndexedSegment>()
         // ANZ -->
-        val count = mpv.getPropertyInt("chapter-list/count") ?: 0
+        val count = safeMpvCall { it.getPropertyInt("chapter-list/count") } ?: 0
         for (i in 0 until count) {
-            val title = mpv.getPropertyString("chapter-list/$i/title") ?: ""
-            val time = mpv.getPropertyInt("chapter-list/$i/time") ?: 0
-        // ANZ <--
+            val title = safeMpvCall { it.getPropertyString("chapter-list/$i/title") } ?: ""
+            val time = safeMpvCall { it.getPropertyInt("chapter-list/$i/time") } ?: 0
+            // ANZ <--
             chapters.add(
                 IndexedSegment(
                     name = title,
@@ -1056,9 +1056,14 @@ class PlayerViewModel @JvmOverloads constructor(
         }
     }
 
+    // ANZ -->
     fun updateReadAhead(value: Long) {
-        _readAhead.update { value.toFloat() }
+        val floatVal = value.toFloat()
+        if (_readAhead.value != floatVal) {
+            _readAhead.update { floatVal }
+        }
     }
+    // ANZ <--
 
     private fun updatePausedState() {
         if (pausedState.value == null) {
@@ -2264,10 +2269,11 @@ class PlayerViewModel @JvmOverloads constructor(
             selectedHosterState.getChangedAt(videoIndex, video, Video.State.LOAD_VIDEO),
         )
 
+        // ANZ -->
         // Pause until everything has loaded
         updatePausedState()
         pause()
-        kotlinx.coroutines.delay(500)
+        // ANZ <--
 
         val resolvedVideo = if (selectedHosterState.videoState[videoIndex] != Video.State.READY) {
             HosterLoader.getResolvedVideo(source, video)

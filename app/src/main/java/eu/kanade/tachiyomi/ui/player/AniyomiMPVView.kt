@@ -190,9 +190,15 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     // ANZ -->
     fun release() {
         initialized = false
+        mpv?.let {
+            it.setPropertyString("vo", "null")
+            it.setPropertyString("force-window", "no")
+            it.detachSurface()
+        }
         holder.removeCallback(this)
         mpv = null
     }
+    // ANZ <--
 
     fun init(mpvInst: MPV) {
         this.mpv = mpvInst

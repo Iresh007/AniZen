@@ -385,8 +385,15 @@ class PlayerActivity : BaseActivity() {
         player.isExiting = true
         PlayerStats.reset()
 
-        httpServer?.stop()
+        // ANZ -->
+        val serverToStop = httpServer
         httpServer = null
+        if (serverToStop != null) {
+            lifecycleScope.launchIO {
+                runCatching { serverToStop.stop() }
+            }
+        }
+        // ANZ <--
 
         audioFocusRequest?.let {
             AudioManagerCompat.abandonAudioFocusRequest(audioManager, it)
@@ -429,7 +436,7 @@ class PlayerActivity : BaseActivity() {
         player.isExiting = true
         if (isFinishing) {
             // ANZ -->
-            mpv.command("stop")
+            viewModel.safeMpvCall { it.command("stop") }
             // ANZ <--
         } else {
             viewModel.pause()
@@ -550,11 +557,13 @@ class PlayerActivity : BaseActivity() {
 
         // ANZ -->
         player.init(mpv)
-        mpv.setOptionString("sub-ass-force-margins", "yes")
-        mpv.setOptionString("sub-use-margins", "yes")
-        mpv.setOptionString("idle", "yes")
-        mpv.addLogObserver(playerObserver)
-        mpv.addObserver(playerObserver)
+        viewModel.safeMpvCall {
+            it.setOptionString("sub-ass-force-margins", "yes")
+            it.setOptionString("sub-use-margins", "yes")
+            it.setOptionString("idle", "yes")
+            it.addLogObserver(playerObserver)
+            it.addObserver(playerObserver)
+        }
         // ANZ <--
     }
 
@@ -876,11 +885,15 @@ class PlayerActivity : BaseActivity() {
                 val value = player.coreIdle ?: false
                 viewModel.coreIdle.update { value }
             }
+            // ANZ -->
             "chapter-list" -> {
-                viewModel.loadChapters()
-                viewModel.updateChapter(0)
+                lifecycleScope.launchIO {
+                    viewModel.loadChapters()
+                    viewModel.updateChapter(0)
+                }
             }
             "track-list" -> viewModel.loadTracks()
+            // ANZ <--
         }
     }
 
@@ -1465,50 +1478,53 @@ class PlayerActivity : BaseActivity() {
             return
         }
 
-        setHttpOptions(video)
-
-        // Set mime-type for TV or if provided
-        val mime = video.mimeType ?: if (isTv) "video/mp4" else null
-        mime?.let {
-            // ANZ -->
-            mpv.setOptionString("android-mime-type", it)
-            // ANZ <--
-        }
-
-        if (viewModel.isLoadingEpisode.value) {
-            viewModel.currentEpisode.value?.let { episode ->
-                val preservePos = playerPreferences.preserveWatchingPosition().get()
-                val resumePosition = position
-                    ?: if (episode.seen && !preservePos) {
-                        0L
-                    } else {
-                        episode.last_second_seen
-                    }
-                // ANZ -->
-                mpv.command("set", "start", "${resumePosition / 1000F}")
-                // ANZ <--
-            }
-        } else {
-            player.timePos?.let {
-                // ANZ -->
-                mpv.command("set", "start", "${player.timePos}")
-                // ANZ <--
-            }
-        }
-        httpServer?.stop()
+        // ANZ -->
+        val serverToStop = httpServer
         httpServer = null
 
-        if (video.videoUrl.startsWith(TorrentServerUtils.hostUrl) ||
-            video.videoUrl.startsWith("magnet") ||
-            video.videoUrl.endsWith(".torrent")
-        ) {
-            launchIO {
+        val episode = viewModel.currentEpisode.value
+        val preservePos = playerPreferences.preserveWatchingPosition().get()
+        val resumePosition = position
+            ?: if (episode?.seen == true && !preservePos) {
+                0L
+            } else {
+                episode?.last_second_seen
+            }
+        val isTvMode = isTv
+        val isEpisodeLoading = viewModel.isLoadingEpisode.value
+        val playerTimePos = player.timePos
+
+        launchIO {
+            if (serverToStop != null) {
+                runCatching { serverToStop.stop() }
+            }
+
+            setHttpOptions(video)
+
+            // Set mime-type for TV or if provided
+            val mime = video.mimeType ?: if (isTvMode) "video/mp4" else null
+            mime?.let {
+                viewModel.safeMpvCall { mpv -> mpv.setOptionString("android-mime-type", it) }
+            }
+
+            if (isEpisodeLoading) {
+                if (resumePosition != null) {
+                    viewModel.safeMpvCall { mpv -> mpv.command("set", "start", "${resumePosition / 1000F}") }
+                }
+            } else {
+                playerTimePos?.let {
+                    viewModel.safeMpvCall { mpv -> mpv.command("set", "start", "$it") }
+                }
+            }
+
+            if (video.videoUrl.startsWith(TorrentServerUtils.hostUrl) ||
+                video.videoUrl.startsWith("magnet") ||
+                video.videoUrl.endsWith(".torrent")
+            ) {
                 TorrentServerService.start()
                 TorrentServerService.wait(10)
                 torrentLinkHandler(video.videoUrl, video.quality)
-            }
-        } else {
-            launchIO {
+            } else {
                 val httpSource = viewModel.currentSource.value as? AnimeHttpSource
                 var videoUrl: String = video.videoUrl
                 if (video.usesHttpServer() && httpSource != null) {
@@ -1531,18 +1547,15 @@ class PlayerActivity : BaseActivity() {
                 if (!externalAudio.isNullOrBlank()) {
                     val parsedAudioUrl = parseVideoUrl(externalAudio)
                     if (!parsedAudioUrl.isNullOrBlank()) {
-                        // ANZ -->
-                        mpv.setOptionString("audio-file", parsedAudioUrl)
-                        // ANZ <--
+                        viewModel.safeMpvCall { mpv -> mpv.setOptionString("audio-file", parsedAudioUrl) }
                         logcat { "Player: Mounted atomic audio-file at loadfile time: $parsedAudioUrl" }
                     }
                 }
 
-                // ANZ -->
-                mpv.command("loadfile", parseVideoUrl(videoUrl) ?: videoUrl)
-                // ANZ <--
+                viewModel.safeMpvCall { mpv -> mpv.command("loadfile", parseVideoUrl(videoUrl) ?: videoUrl) }
             }
         }
+        // ANZ <--
         updateDiscordRPC(exitingPlayer = false)
     }
 
@@ -1555,7 +1568,7 @@ class PlayerActivity : BaseActivity() {
             val torrent = TorrentServerApi.uploadTorrent(videoInputStream!!, quality, "", "", false)
             val torrentUrl = TorrentServerUtils.getTorrentPlayLink(torrent, 0)
             // ANZ -->
-            mpv.command("loadfile", torrentUrl)
+            viewModel.safeMpvCall { mpv -> mpv.command("loadfile", torrentUrl) }
             // ANZ <--
             return
         }
@@ -1574,7 +1587,7 @@ class PlayerActivity : BaseActivity() {
         val currentTorrent = TorrentServerApi.addTorrent(videoUrl, quality, "", "", false)
         val videoTorrentUrl = TorrentServerUtils.getTorrentPlayLink(currentTorrent, index)
         // ANZ -->
-        mpv.command("loadfile", videoTorrentUrl)
+        viewModel.safeMpvCall { mpv -> mpv.command("loadfile", videoTorrentUrl) }
         // ANZ <--
     }
 
@@ -1618,11 +1631,13 @@ class PlayerActivity : BaseActivity() {
         }.joinToString(",")
 
         // ANZ -->
-        mpv.setOptionString("http-header-fields", httpHeaderString)
-        // Also set the global user-agent for this specific video request to be safe,
-        // as some MPV versions prioritize it over the fields string.
-        headers["User-Agent"]?.let {
-            mpv.setOptionString("user-agent", it)
+        viewModel.safeMpvCall { mpv ->
+            mpv.setOptionString("http-header-fields", httpHeaderString)
+            // Also set the global user-agent for this specific video request to be safe,
+            // as some MPV versions prioritize it over the fields string.
+            headers["User-Agent"]?.let {
+                mpv.setOptionString("user-agent", it)
+            }
         }
         // ANZ <--
     }
@@ -1680,7 +1695,9 @@ class PlayerActivity : BaseActivity() {
     private fun fileLoaded() {
         if (player.isExiting) return
         setMpvMediaTitle()
-        setupPlayerOrientation()
+        // ANZ -->
+        runOnUiThread { setupPlayerOrientation() }
+        // ANZ <--
         setupChapters()
         setupTracks()
         viewModel.restoreAspectRatio()
@@ -1744,9 +1761,10 @@ class PlayerActivity : BaseActivity() {
         val anime = viewModel.currentAnime.value ?: return
         val episode = viewModel.currentEpisode.value ?: return
 
-        // Write to mpv table
         // ANZ -->
-        mpv.setPropertyString("user-data/current-anime/episode-title", episode.name)
+        viewModel.safeMpvCall {
+            it.setPropertyString("user-data/current-anime/episode-title", episode.name)
+        }
         // ANZ <--
 
         val epNumber = episode.episode_number.let { number ->
@@ -1761,7 +1779,9 @@ class PlayerActivity : BaseActivity() {
         )
 
         // ANZ -->
-        mpv.setPropertyString("force-media-title", title)
+        viewModel.safeMpvCall {
+            it.setPropertyString("force-media-title", title)
+        }
         // ANZ <--
     }
 
