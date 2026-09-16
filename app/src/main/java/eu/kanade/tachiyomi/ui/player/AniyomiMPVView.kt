@@ -290,7 +290,6 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         "pause" to MPV.mpvFormat.MPV_FORMAT_FLAG,
         "video-params/aspect" to MPV.mpvFormat.MPV_FORMAT_DOUBLE,
         "eof-reached" to MPV.mpvFormat.MPV_FORMAT_FLAG,
-        "vo-delayed-frame-count" to MPV.mpvFormat.MPV_FORMAT_INT64,
 
         "user-data/aniyomi/show_text" to MPV.mpvFormat.MPV_FORMAT_STRING,
         "user-data/aniyomi/toggle_ui" to MPV.mpvFormat.MPV_FORMAT_STRING,

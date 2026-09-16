@@ -16,9 +16,6 @@ class PlayerObserver(val activity: PlayerActivity) :
     }
 
     override fun eventProperty(property: String, value: Long) {
-        if (property == "vo-delayed-frame-count") {
-            activity.runOnUiThread { activity.onObserverEvent(property, value) }
-        }
     }
 
     override fun eventProperty(property: String, value: Boolean) {

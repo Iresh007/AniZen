@@ -371,19 +371,7 @@ class PlayerActivity : BaseActivity() {
         // <-- Cast
 
         setContent {
-            // ANZ -->
-            val uiPreferences = remember { Injekt.get<UiPreferences>() }
-            val dynamicPlayerTheme by uiPreferences.dynamicPlayerTheme().collectAsStatePref()
-            val anime by viewModel.currentAnime.collectAsState()
-            val vibrantColor = remember(anime?.id) {
-                anime?.let { CoverColorObserver.get(it.id) ?: it.asAnimeCover().vibrantCoverColor }
-            }
-            DynamicTachiyomiTheme(
-                animate = false,
-                colorSeed = vibrantColor,
-                enabled = dynamicPlayerTheme,
-            ) {
-            // ANZ <--
+            TachiyomiTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         factory = { player },
@@ -731,13 +719,9 @@ class PlayerActivity : BaseActivity() {
 
     // A bunch of observers
 
+    @Suppress("unused")
     internal fun onObserverEvent(property: String, value: Long) {
         if (player.isExiting) return
-        // ANZ -->
-        when (property) {
-            "vo-delayed-frame-count" -> player.checkAdaptiveScaling(value)
-        }
-        // ANZ <--
     }
 
     @Suppress("unused")
@@ -1134,79 +1118,76 @@ class PlayerActivity : BaseActivity() {
         // ANZ <--
     }
 
-    // ANZ -->
     fun setVideo(video: Video?, position: Long? = null) {
         if (player.isExiting) return
         if (video == null) return
 
         viewModel.setIsStopped(false)
+        setHttpOptions(video)
 
+        if (viewModel.isLoadingEpisode.value) {
+            viewModel.currentEpisode.value?.let { episode ->
+                val preservePos = playerPreferences.preserveWatchingPosition().get()
+                val resumePosition = position
+                    ?: if (episode.seen && !preservePos) {
+                        0L
+                    } else {
+                        episode.last_second_seen
+                    }
+                mpv.command("set", "start", "${resumePosition / 1000F}")
+            }
+        } else {
+            viewModel.pos.value?.let {
+                mpv.command("set", "start", "$it")
+            }
+        }
+
+        // ANZ -->
         val serverToStop = httpServer
         httpServer = null
-
-        val episode = viewModel.currentEpisode.value
-        val isEpisodeLoading = viewModel.isLoadingEpisode.value
-        val preservePos = playerPreferences.preserveWatchingPosition().get()
-        val resumePosition = position
-            ?: if (episode?.seen == true && !preservePos) {
-                0L
-            } else {
-                episode?.last_second_seen
-            }
-        val playerTimePos = viewModel.pos.value
-
-        lifecycleScope.launchIO {
-            if (serverToStop != null) {
+        if (serverToStop != null) {
+            lifecycleScope.launchIO {
                 runCatching { serverToStop.stop() }
             }
+        }
+        // ANZ <--
 
-            setHttpOptions(video)
-
-            if (isEpisodeLoading) {
-                if (resumePosition != null) {
-                    mpv.command("set", "start", "${resumePosition / 1000F}")
-                }
-            } else {
-                playerTimePos?.let {
-                    mpv.command("set", "start", "$it")
-                }
-            }
-
-            if (video.videoUrl.startsWith(TorrentServerUtils.hostUrl) ||
-                video.videoUrl.startsWith("magnet") ||
-                video.videoUrl.endsWith(".torrent")
-            ) {
+        if (video.videoUrl.startsWith(TorrentServerUtils.hostUrl) ||
+            video.videoUrl.startsWith("magnet") ||
+            video.videoUrl.endsWith(".torrent")
+        ) {
+            launchIO {
                 TorrentServerService.start()
                 TorrentServerService.wait(10)
                 // ANK -->
                 torrentLinkHandler(video.videoUrl, video.videoTitle, video.mpvArgs)
                 // ANK <--
-            } else {
-                val httpSource = viewModel.currentSource.value as? AnimeHttpSource
-                var videoUrl: String = video.videoUrl
-                if (video.usesHttpServer() && httpSource != null) {
-                    val port = try {
-                        httpServer = httpSource.createHttpServer()
-                        httpServer?.start()
-                        httpServer?.listeningPort ?: 0
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR, e) { "Failed to start http server" }
-                        return@launchIO
-                    }
-                    val newVideo = video.copyHttpServer(port)
-                    videoUrl = newVideo.videoUrl
-                    viewModel.updateVideo(newVideo)
-                }
-                val resolvedUrl = parseVideoUrl(videoUrl) ?: videoUrl
-                loadFile(resolvedUrl, video.mpvArgs)
             }
-
-            // AM (DISCORD) -->
-            updateDiscordRPC(exitingPlayer = false)
-            // <-- AM (DISCORD)
+        } else {
+            // ANZ -->
+            val httpSource = viewModel.currentSource.value as? AnimeHttpSource
+            var videoUrl: String = video.videoUrl
+            if (video.usesHttpServer() && httpSource != null) {
+                val port = try {
+                    httpServer = httpSource.createHttpServer()
+                    httpServer?.start()
+                    httpServer?.listeningPort ?: 0
+                } catch (e: Exception) {
+                    logcat(LogPriority.ERROR, e) { "Failed to start http server" }
+                    return
+                }
+                val newVideo = video.copyHttpServer(port)
+                videoUrl = newVideo.videoUrl
+                viewModel.updateVideo(newVideo)
+            }
+            loadFile(parseVideoUrl(videoUrl)!!, video.mpvArgs)
+            // ANZ <--
         }
+
+        // AM (DISCORD) -->
+        updateDiscordRPC(exitingPlayer = false)
+        // <-- AM (DISCORD)
     }
-    // ANZ <--
 
     // ANK -->
     /**

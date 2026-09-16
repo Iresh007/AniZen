@@ -509,7 +509,7 @@ fun PlayerControls(
                         }
 
                         val invertDuration by playerPreferences.invertDuration().collectAsState()
-                    val readAhead by viewModel.readAhead.collectAsState()
+                    val readAhead by viewModel.mpv.propFlow<Float>("demuxer-cache-time").collectAsState()
                     val preciseSeeking by gesturePreferences.playerSmoothSeek().collectAsState()
 
                     var wasPlayerAlreadyPause by remember { mutableStateOf(false) }
@@ -544,7 +544,7 @@ fun PlayerControls(
                     SeekbarWithTimers(
                         position = sliderPosition,
                         duration = totalDuration,
-                        readAheadValue = readAhead,
+                        readAheadValue = readAhead ?: 0f,
                         onValueChange = {
                             if (!viewModel.isSeekingUI.value) {
                                 wasPlayerAlreadyPause = viewModel.paused.value == true

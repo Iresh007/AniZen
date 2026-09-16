@@ -490,16 +490,6 @@ class PlayerViewModel @JvmOverloads constructor(
         // ANZ <--
 
         // ANZ -->
-        mpv.propFlow<Float>("speed")
-            .filterNotNull()
-            .onEach { speed -> playbackSpeed.update { speed } }
-            .launchIn(viewModelScope)
-
-        mpv.propFlow<Float>("demuxer-cache-time")
-            .filterNotNull()
-            .onEach { cache -> readAhead.update { cache } }
-            .launchIn(viewModelScope)
-
         viewModelScope.launchIO {
             try {
                 currentAnime.collect { anime ->
