@@ -638,7 +638,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 }
             } catch (e: NullPointerException) {
                 logcat(LogPriority.ERROR) { "Couldn't load tracks, probably cause mpv was destroyed" }
-                return@launch
+                // ANZ -->
+                return@launchIO
+                // ANZ <--
             }
 
             val oldSubTracks = _subtitleTracks.value
