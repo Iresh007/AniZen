@@ -37,7 +37,6 @@ import eu.kanade.tachiyomi.util.episode.EpisodeSeasonUtils
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import java.text.DateFormat
 
 
 import android.app.Application
@@ -148,7 +147,8 @@ import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.i18n.MR
 
-import tachiyomi.source.local.isLocal
+import eu.kanade.tachiyomi.util.episode.filterDownloadedEpisodes
+import tachiyomi.domain.anime.model.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -345,8 +345,8 @@ class PlayerViewModel @JvmOverloads constructor(
     private val thumbnailTileCache = mutableMapOf<Int, Bitmap>()
 
     private var fillerEpisodes: Set<Float> = emptySet()
-    val relativeTime: Int = uiPreferences.relativeTime().get()
-    val dateFormat: DateFormat = UiPreferences.dateFormat(uiPreferences.dateFormat().get())
+    val relativeTime: Boolean = uiPreferences.relativeTime().get()
+    val dateFormat: java.time.format.DateTimeFormatter = UiPreferences.dateFormat(uiPreferences.dateFormat().get())
     // ANZ <--
     private val volumeBoostCap by mpv.propFlow<Int>("volume-max").collectAsState(viewModelScope)
 
@@ -1628,9 +1628,10 @@ class PlayerViewModel @JvmOverloads constructor(
         return try {
             val anime = getAnime.await(animeId)
             if (anime != null) {
+                sourceManager.isInitialized.first { it }
+                val source = sourceManager.getOrStub(anime.source)
                 _currentAnime.update { _ -> anime }
                 animeTitle.update { _ -> anime.title }
-                sourceManager.isInitialized.first { it }
                 episodeId = initialEpisodeId
 
                 updateEpisodeList(initEpisodeList(anime))
@@ -1673,9 +1674,6 @@ class PlayerViewModel @JvmOverloads constructor(
                         episode = currentEp.toDomainEpisode()!!,
                         anime = anime,
                         source = source,
-                        sourceManager = sourceManager,
-                        mergedReferences = mergedReferences,
-                        mergedManga = mergedManga,
                     )
                         .takeIf { it.isNotEmpty() }
                         ?.also { currentHosterList = it }
@@ -1711,37 +1709,13 @@ class PlayerViewModel @JvmOverloads constructor(
      * time in a background thread to avoid blocking the UI.
      */
     private fun initEpisodeList(anime: Anime): List<Episode> {
-        // ANK -->
-        val (episodes, animeMap) = runBlocking {
-            if (anime.source == MERGED_SOURCE_ID) {
-                getMergedChaptersByMangaId.await(anime.id, applyFilter = true) to
-                    getMergedMangaById.await(anime.id)
-                        .associateBy { it.id }
-            } else {
-                getEpisodesByAnimeId.await(anime.id, applyFilter = true) to null
-            }
-        }
+        val episodes = runBlocking { getEpisodesByAnimeId.await(anime.id) }
 
-        val selectedEpisode = episodes.find { it.id == episodeId }
-            ?: error("Requested episode of id $episodeId not found in episode list")
-
-        val episodesForPlayer = filterEpisodeList(anime, episodes, animeMap, selectedEpisode)
-        // ANK <--
-
-        return episodesForPlayer
+        return episodes
             .sortedWith(getEpisodeSort(anime, sortDescending = false))
-            // ANK -->
-            .run {
-                if (playerPreferences.skipDupe().get()) {
-                    removeDuplicates(selectedEpisode)
-                } else {
-                    this
-                }
-            }
-            // ANK <--
             .run {
                 if (basePreferences.downloadedOnly().get()) {
-                    filterDownloaded(anime, animeMap)
+                    filterDownloadedEpisodes(anime)
                 } else {
                     this
                 }
@@ -1942,7 +1916,7 @@ class PlayerViewModel @JvmOverloads constructor(
                 videoIdx,
                 currentVideo,
                 // ANK -->
-                Video.State.ERROR),
+                Video.State.ERROR,
                 // ANK <--
             ),
         )
@@ -2217,32 +2191,6 @@ class PlayerViewModel @JvmOverloads constructor(
         currentEp.seen = true
         updateTrackEpisodeSeen(currentEp)
         deleteEpisodeIfNeeded(currentEp)
-
-        val markDuplicateAsSeen = libraryPreferences.markDuplicateReadChapterAsRead().get()
-            .contains(LibraryPreferences.MARK_DUPLICATE_CHAPTER_READ_EXISTING)
-        if (!markDuplicateAsSeen) return
-
-        val duplicateUnseenEpisodes = unfilteredEpisodeList
-            .mapNotNull { episode ->
-                if (
-                    !episode.seen &&
-                    episode.isRecognizedNumber &&
-                    episode.episodeNumber.toFloat() == currentEp.episode_number
-                ) {
-                    EpisodeUpdate(id = episode.id, read = true)
-                        // KMK -->
-                        .also { deleteDupChapterIfNeeded(episode.copy(read = true).toDbEpisode()) }
-                    // KMK <--
-                } else {
-                    null
-                }
-            }
-
-        if (duplicateUnseenEpisodes.isNotEmpty()) {
-            viewModelScope.launchNonCancellable {
-                updateEpisode.awaitAll(duplicateUnseenEpisodes)
-            }
-        }
     }
 
     private fun downloadNextEpisodes() {
@@ -2334,11 +2282,11 @@ class PlayerViewModel @JvmOverloads constructor(
             updateEpisode.await(
                 EpisodeUpdate(
                     id = episode.id!!,
-                    read = episode.seen,
+                    seen = episode.seen,
                     bookmark = episode.bookmark,
                     fillermark = episode.fillermark,
-                    lastPageRead = episode.last_second_seen,
-                    totalPages = episode.total_seconds,
+                    lastSecondSeen = episode.last_second_seen,
+                    totalSeconds = episode.total_seconds,
                 ),
             )
         }
@@ -2488,7 +2436,7 @@ class PlayerViewModel @JvmOverloads constructor(
             } catch (e: Exception) {
                 SetAsCover.Error
             }
-            eventChannel.send(Event.SetCoverResult(result))
+            eventChannel.send(Event.SetCoverResult(result, ArtType.Cover))
         }
     }
 
