@@ -138,7 +138,6 @@ fun PlayerControls(
     val controlsShown by viewModel.controlsShown.collectAsState()
     val areControlsLocked by viewModel.areControlsLocked.collectAsState()
     val seekBarShown by viewModel.seekBarShown.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
     val pausedForCache by viewModel.pausedForCache.collectAsState()
     // ANZ -->
     val coreIdle by viewModel.coreIdle.collectAsState()
@@ -172,7 +171,6 @@ fun PlayerControls(
     val isBuffering = (pausedForCache == true) ||
         (seeking == true && !isSeekingUI) ||
         (coreIdle == true && paused == false && !isSeekingUI)
-    val isPlayerLoading = isLoading || isBuffering
     // ANZ <--
     val seekPosition by viewModel.seekPosition.collectAsState()
     val chaptersList = chapters
@@ -413,7 +411,7 @@ fun PlayerControls(
                 AnimatedVisibility(
                     visible = (
                         (controlsShown && !areControlsLocked || gestureSeekAmount != null) ||
-                            (isPlayerLoading && !isStopped) ||
+                            (isBuffering && !isStopped) ||
                             isLoadingEpisode
                         ) && !isLongPressing,
                     enter = fadeIn(playerControlsEnterAnimationSpec()),
@@ -431,7 +429,7 @@ fun PlayerControls(
                         hasNext = hasNextEpisode,
                         onSkipNext = { viewModel.changeEpisode(false) },
                         isStopped = isStopped,
-                        isLoading = isPlayerLoading,
+                        isLoading = isBuffering,
                         isLoadingEpisode = isLoadingEpisode,
                         controlsShown = controlsShown,
                         areControlsLocked = areControlsLocked,

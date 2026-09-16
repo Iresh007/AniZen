@@ -49,22 +49,23 @@ class PlayerObserver(val activity: PlayerActivity) :
     var httpError: String? = null
 
     override fun logMessage(prefix: String, level: Int, text: String) {
+        if (level == MPV.mpvLogLevel.MPV_LOG_LEVEL_ERROR) {
+            if (text.startsWith(TRACK_LOAD_FAILURE)) {
+                val url = text.removePrefix(TRACK_LOAD_FAILURE).substringBeforeLast(".")
+                activity.runOnUiThread {
+                    activity.onTrackLoadedFailure(url)
+                }
+            }
+        }
+
         val logPriority = when (level) {
             MPV.mpvLogLevel.MPV_LOG_LEVEL_FATAL, MPV.mpvLogLevel.MPV_LOG_LEVEL_ERROR -> LogPriority.ERROR
             MPV.mpvLogLevel.MPV_LOG_LEVEL_WARN -> LogPriority.WARN
             MPV.mpvLogLevel.MPV_LOG_LEVEL_INFO -> LogPriority.INFO
             else -> LogPriority.VERBOSE
         }
-        if (text.contains("HTTP error")) httpError = text
+        if (text.contains("HTTP error")) httpError = text.removePrefix("http: ")
         logcat.logcat("mpv/$prefix", logPriority) { text }
-
-        if (level == MPV.mpvLogLevel.MPV_LOG_LEVEL_ERROR || level == MPV.mpvLogLevel.MPV_LOG_LEVEL_FATAL ||
-            text.contains("Cannot open", ignoreCase = true) || text.contains("failed to open", ignoreCase = true)
-        ) {
-            activity.runOnUiThread {
-                activity.viewModel.handleMpvLogFailure(text)
-            }
-        }
     }
 
     companion object {

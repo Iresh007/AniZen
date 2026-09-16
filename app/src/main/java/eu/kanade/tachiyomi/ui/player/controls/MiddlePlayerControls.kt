@@ -86,8 +86,6 @@ fun MiddlePlayerControls(
             }
         }
 
-        val icon = AnimatedImageVector.animatedVectorResource(R.drawable.anim_play_to_pause)
-        val interaction = remember { MutableInteractionSource() }
         // ANZ -->
         when {
             (isLoading || isLoadingEpisode) && showLoadingCircle -> {
@@ -113,6 +111,8 @@ fun MiddlePlayerControls(
             }
 
             else -> {
+                val icon = AnimatedImageVector.animatedVectorResource(R.drawable.anim_play_to_pause)
+                val interaction = remember { MutableInteractionSource() }
                 AnimatedVisibility(
                     visible = controlsShown && !areControlsLocked,
                     enter = enter,

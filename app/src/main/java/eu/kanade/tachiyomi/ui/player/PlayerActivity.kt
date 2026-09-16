@@ -375,9 +375,11 @@ class PlayerActivity : BaseActivity() {
             val uiPreferences = remember { Injekt.get<UiPreferences>() }
             val dynamicPlayerTheme by uiPreferences.dynamicPlayerTheme().collectAsStatePref()
             val anime by viewModel.currentAnime.collectAsState()
-            val vibrantColors by CoverColorObserver.vibrantColors.collectAsState()
-            val vibrantColor = anime?.let { vibrantColors[it.id] ?: it.asAnimeCover().vibrantCoverColor }
+            val vibrantColor = remember(anime?.id) {
+                anime?.let { CoverColorObserver.get(it.id) ?: it.asAnimeCover().vibrantCoverColor }
+            }
             DynamicTachiyomiTheme(
+                animate = false,
                 colorSeed = vibrantColor,
                 enabled = dynamicPlayerTheme,
             ) {
@@ -889,7 +891,8 @@ class PlayerActivity : BaseActivity() {
 
     private fun setupPlayerOrientation() {
         if (player.isExiting) return
-        requestedOrientation = when (playerPreferences.defaultPlayerOrientationType().get()) {
+        // ANZ -->
+        val target = when (playerPreferences.defaultPlayerOrientationType().get()) {
             PlayerOrientation.Free -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
             PlayerOrientation.Video -> if ((player.getVideoOutAspect() ?: 0.0) > 1.0) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -904,6 +907,10 @@ class PlayerActivity : BaseActivity() {
             PlayerOrientation.ReverseLandscape -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
             PlayerOrientation.SensorLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
+        if (requestedOrientation != target) {
+            requestedOrientation = target
+        }
+        // ANZ <--
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -1450,21 +1457,7 @@ class PlayerActivity : BaseActivity() {
         // ANZ -->
         runOnUiThread { setupPlayerOrientation() }
         // ANZ <--
-
-        // ANZ -->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-            powerManager?.addThermalStatusListener { status ->
-                if (status >= android.os.PowerManager.THERMAL_STATUS_SEVERE) {
-                    player.checkAdaptiveScaling(Long.MAX_VALUE)
-                }
-            }
-        }
-        // ANZ <--
         setupChapters()
-        // ANZ -->
-        viewModel.isLoading.update { false }
-        // ANZ <--
         viewModel.checkFileLoaded()
 
         // aniSkip stuff
