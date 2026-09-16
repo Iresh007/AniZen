@@ -1125,13 +1125,6 @@ class PlayerActivity : BaseActivity() {
             }
         }
         // ANZ <--
-
-        viewModel.updateHasPreviousEpisode(
-            viewModel.getCurrentEpisodeIndex() != 0,
-        )
-        viewModel.updateHasNextEpisode(
-            viewModel.getCurrentEpisodeIndex() != viewModel.currentPlaylist.value.size - 1,
-        )
     }
 
     // ANZ -->

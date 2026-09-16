@@ -122,7 +122,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -452,15 +451,6 @@ class PlayerViewModel @JvmOverloads constructor(
 
     private val _fontList = MutableStateFlow<ImmutableList<String>>(persistentListOf())
     val fontList = _fontList.asStateFlow()
-
-    // ANK -->
-    private val unfilteredEpisodeList by lazy {
-        val anime = currentAnime.value ?: return@lazy emptyList()
-        runBlocking {
-            getEpisodesByAnimeId.await(anime.id)
-        }
-    }
-    // ANK <--
 
     init {
         viewModelScope.launchIO {
@@ -2152,6 +2142,10 @@ class PlayerViewModel @JvmOverloads constructor(
 
         _currentEpisode.update { _ -> chosenEpisode }
         updateEpisode(chosenEpisode)
+        // ANZ -->
+        _hasPreviousEpisode.update { _ -> getCurrentEpisodeIndex() != 0 }
+        _hasNextEpisode.update { _ -> getCurrentEpisodeIndex() != currentPlaylist.value.size - 1 }
+        // ANZ <--
 
         return withIOContext {
             try {
