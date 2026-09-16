@@ -188,6 +188,12 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     }
 
     // ANZ -->
+    fun release() {
+        initialized = false
+        holder.removeCallback(this)
+        mpv = null
+    }
+
     fun init(mpvInst: MPV) {
         this.mpv = mpvInst
         initialized = true

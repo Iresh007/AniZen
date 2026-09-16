@@ -377,6 +377,18 @@ class PlayerViewModel @JvmOverloads constructor(
         it.setOptionString("icc-cache-dir", cachePath)
         it.setOptionString("keep-open", "yes")
     }
+
+    private val mpvLock = Any()
+
+    @Volatile
+    var isMpvClosed = false
+        private set
+
+    fun <T> safeMpvCall(block: (MPV) -> T): T? {
+        return synchronized(mpvLock) {
+            if (isMpvClosed) null else block(mpv)
+        }
+    }
     // ANZ <--
 
     private val _customButtons = MutableStateFlow<CustomButtonFetchState>(CustomButtonFetchState.Loading)
@@ -763,7 +775,7 @@ class PlayerViewModel @JvmOverloads constructor(
                 if (cacheFile != null) {
                     withUIContext {
                         // ANZ -->
-                        mpv.command("audio-add", cacheFile.absolutePath, "select", cacheFile.name)
+                        safeMpvCall { it.command("audio-add", cacheFile.absolutePath, "select", cacheFile.name) }
                         // ANZ <--
                     }
                 } else {
@@ -800,7 +812,7 @@ class PlayerViewModel @JvmOverloads constructor(
                     // Use "select" like Animiru so MPV activates the track immediately after loading
                     // Pass URL as the title so loadTracks() can match it back by name
                     // ANZ -->
-                    mpv.command("audio-add", resolvedUrl, "select", resolvedUrl)
+                    safeMpvCall { it.command("audio-add", resolvedUrl, "select", resolvedUrl) }
                     // ANZ <--
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR) { "Failed to resolve or add audio: ${e.message}" }
@@ -849,7 +861,7 @@ class PlayerViewModel @JvmOverloads constructor(
                 if (cacheFile != null) {
                     withUIContext {
                         // ANZ -->
-                        mpv.command("sub-add", cacheFile.absolutePath, "select", cacheFile.name)
+                        safeMpvCall { it.command("sub-add", cacheFile.absolutePath, "select", cacheFile.name) }
                         // ANZ <--
                     }
                 } else {
@@ -886,7 +898,7 @@ class PlayerViewModel @JvmOverloads constructor(
                     // Use "select" like Animiru so MPV activates the track immediately after loading
                     // Pass URL as the title so loadTracks() can match it back by name
                     // ANZ -->
-                    mpv.command("sub-add", resolvedUrl, "select", resolvedUrl)
+                    safeMpvCall { it.command("sub-add", resolvedUrl, "select", resolvedUrl) }
                     // ANZ <--
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR) { "Failed to resolve or add subtitle: ${e.message}" }
@@ -1691,7 +1703,10 @@ class PlayerViewModel @JvmOverloads constructor(
         }
         deletePendingEpisodes()
         // ANZ -->
-        mpv.close()
+        synchronized(mpvLock) {
+            isMpvClosed = true
+            mpv.close()
+        }
         // ANZ <--
     }
 

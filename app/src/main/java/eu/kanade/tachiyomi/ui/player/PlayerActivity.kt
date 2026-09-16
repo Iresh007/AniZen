@@ -404,9 +404,11 @@ class PlayerActivity : BaseActivity() {
         }
 
         // ANZ -->
-        mpv.removeLogObserver(playerObserver)
-        mpv.removeObserver(playerObserver)
-        player.initialized = false
+        player.release()
+        viewModel.safeMpvCall {
+            it.removeLogObserver(playerObserver)
+            it.removeObserver(playerObserver)
+        }
         // ANZ <--
         castManager.cleanup()
 
@@ -608,7 +610,10 @@ class PlayerActivity : BaseActivity() {
 
     private fun copyAssets(configDir: String) {
         val assetManager = this.assets
-        val files = arrayOf("subfont.ttf")
+        // ANZ -->
+        val existingAssets = runCatching { assetManager.list("")?.toSet() }.getOrNull() ?: emptySet()
+        val files = arrayOf("subfont.ttf").filter { it in existingAssets }
+        // ANZ <--
         for (filename in files) {
             var ins: InputStream? = null
             var out: OutputStream? = null
@@ -636,7 +641,8 @@ class PlayerActivity : BaseActivity() {
     private fun copyFontsDirectory() {
         // Optimized font copying: checks if file exists and size matches to avoid startup lag
         // TODO: Ideally we should let MPV directly access the directory, but SAF makes it hard.
-        CoroutineScope(Dispatchers.IO).launchIO {
+        // ANZ -->
+        lifecycleScope.launch(Dispatchers.IO) {
             val fontsDir = storageManager.getFontsDirectory()
             if (fontsDir != null) {
                 val destDir = applicationContext.filesDir
@@ -655,22 +661,24 @@ class PlayerActivity : BaseActivity() {
                     }
                 }
             }
-            // ANZ -->
-            mpv.setPropertyString(
-                "sub-fonts-dir",
-                applicationContext.filesDir.path,
-            )
-            mpv.setPropertyString(
-                "osd-fonts-dir",
-                applicationContext.filesDir.path,
-            )
-            // ANZ <--
+            viewModel.safeMpvCall { mpv ->
+                mpv.setPropertyString(
+                    "sub-fonts-dir",
+                    applicationContext.filesDir.path,
+                )
+                mpv.setPropertyString(
+                    "osd-fonts-dir",
+                    applicationContext.filesDir.path,
+                )
+            }
         }
+        // ANZ <--
     }
 
     fun setupCustomButtons(buttons: List<CustomButton>) {
         if (buttons.isEmpty()) return
-        CoroutineScope(Dispatchers.IO).launchIO {
+        // ANZ -->
+        lifecycleScope.launch(Dispatchers.IO) {
             ensureBridgeScript()
             val scriptsDir = File(applicationContext.filesDir, "scripts").apply { mkdirs() }
             val primaryButtonId = viewModel.primaryButton.value?.id ?: 0L
@@ -710,13 +718,14 @@ class PlayerActivity : BaseActivity() {
             val file = File(scriptsDir, "custombuttons.lua")
             try {
                 file.writeText(customButtonsContent)
-                // ANZ -->
-                mpv.command("load-script", file.absolutePath)
-                // ANZ <--
+                viewModel.safeMpvCall { mpv ->
+                    mpv.command("load-script", file.absolutePath)
+                }
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR, e) { "Failed to write or load custombuttons.lua" }
             }
         }
+        // ANZ <--
     }
 
     private fun setupPlayerAudio() {
