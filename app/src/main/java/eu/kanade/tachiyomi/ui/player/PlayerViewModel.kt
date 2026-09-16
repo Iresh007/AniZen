@@ -81,6 +81,7 @@ import eu.kanade.tachiyomi.ui.player.domain.TrackSelect
 import eu.kanade.tachiyomi.ui.player.loader.EpisodeLoader
 import eu.kanade.tachiyomi.ui.player.loader.HosterLoader
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
+import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
@@ -100,6 +101,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -109,8 +111,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
@@ -191,6 +195,7 @@ class PlayerViewModel @JvmOverloads constructor(
     private val syncPreferences: SyncPreferences = Injekt.get(),
     // ANZ -->
     private val animeFillerListFetcher: AnimeFillerListFetcher = AnimeFillerListFetcher(),
+    private val decoderPreferences: DecoderPreferences = Injekt.get(),
     // ANZ <--
 ) : AndroidViewModel(context) {
 
@@ -311,7 +316,33 @@ class PlayerViewModel @JvmOverloads constructor(
         it?.toIntOrNull() ?: -1
     }.stateIn(viewModelScope, SharingStarted.Eagerly, -1)
 
-    val currentDecoder = MutableStateFlow(Decoder.Auto)
+    // ANZ -->
+    private val _manualDecoder = MutableStateFlow<Decoder?>(null)
+    val currentDecoder = combine(
+        mpv.propFlow<String>("hwdec-current"),
+        _manualDecoder,
+    ) { hwdecCurrent, manual ->
+        manual ?: when (hwdecCurrent) {
+            "mediacodec" -> Decoder.HWPlus
+            "mediacodec-copy" -> Decoder.HW
+            "no" -> Decoder.SW
+            else -> {
+                val configured = mpv.getPropertyString("hwdec")
+                when (configured) {
+                    "mediacodec" -> Decoder.HWPlus
+                    "mediacodec-copy" -> Decoder.HW
+                    "no" -> Decoder.SW
+                    "auto-copy" -> Decoder.AutoCopy
+                    else -> if (decoderPreferences.tryHWDecoding().get()) Decoder.HWPlus else Decoder.SW
+                }
+            }
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        if (decoderPreferences.tryHWDecoding().get()) Decoder.HWPlus else Decoder.SW,
+    )
+    // ANZ <--
     val currentMPVVolume = MutableStateFlow(100)
     val isSeekingUI = MutableStateFlow(false)
     val seekPosition = MutableStateFlow(0f)
@@ -332,6 +363,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val chapters = mpv.propFlow<MPVNode>("chapter-list")
         .map { (it?.toObject<List<ChapterNode>>(json) ?: persistentListOf()).map { it.toSegment() }.toImmutableList() }
+        // ANZ -->
+        .flowOn(Dispatchers.Default)
+        // ANZ <--
 
     val currentChapter = chapters.combine(mpv.propFlow<Int>("chapter")) { list, idx ->
         idx?.let { list.getOrNull(it) }
@@ -364,6 +398,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     ?: persistentListOf()
                 ).toImmutableList()
         }
+        // ANZ -->
+        .flowOn(Dispatchers.Default)
+        // ANZ <--
 
     val audioTracks = mpv.propFlow<MPVNode>("track-list")
         .map { node ->
@@ -374,6 +411,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     ?: persistentListOf()
                 ).toImmutableList()
         }
+        // ANZ -->
+        .flowOn(Dispatchers.Default)
+        // ANZ <--
 
     private val _skipIntroText = MutableStateFlow<String?>(null)
     val skipIntroText = _skipIntroText.asStateFlow()
@@ -451,10 +491,13 @@ class PlayerViewModel @JvmOverloads constructor(
             .onEach(::setAnimeSkipIntroLength)
             .launchIn(viewModelScope)
 
+        // ANZ -->
         mpv.propFlow<MPVNode>("track-list")
             .filterNotNull()
+            .flowOn(Dispatchers.Default)
             .onEach { onTrackListChanged(it) }
             .launchIn(viewModelScope)
+        // ANZ <--
 
         // ANZ -->
         mpv.propFlow<Float>("speed")
@@ -580,6 +623,9 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun clearTracks() {
+        // ANZ -->
+        _manualDecoder.update { null }
+        // ANZ <--
         hasLoadedTracks.update { _ -> false }
         // ANK -->
         clearLoadedTrackStates()
@@ -1715,8 +1761,10 @@ class PlayerViewModel @JvmOverloads constructor(
      * Episode list for the active anime. It's retrieved lazily and should be accessed for the first
      * time in a background thread to avoid blocking the UI.
      */
-    private fun initEpisodeList(anime: Anime): List<Episode> {
-        val episodes = runBlocking { getEpisodesByAnimeId.await(anime.id) }
+    // ANZ -->
+    private suspend fun initEpisodeList(anime: Anime): List<Episode> {
+        val episodes = getEpisodesByAnimeId.await(anime.id)
+    // ANZ <--
 
         return episodes
             .sortedWith(getEpisodeSort(anime, sortDescending = false))
@@ -2682,15 +2730,17 @@ class PlayerViewModel @JvmOverloads constructor(
         return DefaultStreamPreferenceStore(playerPreferences).getEffectiveSelector(currentAnime.value?.id)
     }
 
+    // ANZ -->
     fun updateDecoder(decoder: Decoder) {
-        currentDecoder.update { decoder }
+        _manualDecoder.update { decoder }
         mpv.setPropertyString("hwdec", decoder.value)
     }
 
     fun getDecoder() {
         val active = mpv.getPropertyString("hwdec-current") ?: "no"
-        currentDecoder.update { getDecoderFromValue(active) }
+        _manualDecoder.update { getDecoderFromValue(active) }
     }
+    // ANZ <--
 
     fun updateReadAhead(value: Long) {
         val floatVal = value.toFloat()
