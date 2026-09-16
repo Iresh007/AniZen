@@ -433,11 +433,11 @@ class PlayerViewModel @JvmOverloads constructor(
             .onEach(::onChapterChanged)
             .launchIn(viewModelScope)
 
-        mpv.propFlow<MPVNode>("sid")
+        mpv.propFlow<String>("sid")
             .onEach { onSubtitleTrackSelectChange() }
             .launchIn(viewModelScope)
 
-        mpv.propFlow<MPVNode>("secondary-sid")
+        mpv.propFlow<String>("secondary-sid")
             .onEach { onSubtitleTrackSelectChange() }
             .launchIn(viewModelScope)
 
@@ -452,14 +452,14 @@ class PlayerViewModel @JvmOverloads constructor(
             .launchIn(viewModelScope)
 
         // ANZ -->
-        mpv.propFlow<Double>("speed")
+        mpv.propFlow<Float>("speed")
             .filterNotNull()
-            .onEach { speed -> playbackSpeed.update { speed.toFloat() } }
+            .onEach { speed -> playbackSpeed.update { speed } }
             .launchIn(viewModelScope)
 
-        mpv.propFlow<Long>("demuxer-cache-time")
+        mpv.propFlow<Float>("demuxer-cache-time")
             .filterNotNull()
-            .onEach { cache -> readAhead.update { cache.toFloat() } }
+            .onEach { cache -> readAhead.update { cache } }
             .launchIn(viewModelScope)
 
         viewModelScope.launchIO {
