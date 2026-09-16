@@ -39,7 +39,9 @@
 -keep class rx.** { public protected *; }
 -keep class app.cash.quickjs.** { public protected *; }
 -keep class uy.kohesive.injekt.** { public protected *; }
--keep class is.xyz.mpv.** { public protected *; }
+# ANZ -->
+-keep class is.xyz.mpv.** { *; }
+# ANZ <--
 -keep class com.arthenica.** { public protected *; }
 
 # From extensions-lib
