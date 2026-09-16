@@ -193,7 +193,7 @@ fun RenderPlayerButton(
                 exit = fadeOut(),
             ) {
                 CurrentChapter(
-                    chapter = currentChapter!!.toSegment(),
+                    chapter = currentChapter!!,
                     onClick = { viewModel.showSheet(Sheets.Chapters) },
                 )
             }

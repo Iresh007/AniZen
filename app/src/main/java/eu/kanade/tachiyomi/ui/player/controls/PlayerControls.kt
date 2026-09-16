@@ -152,16 +152,17 @@ fun PlayerControls(
     val showSeekTime by playerPreferences.showSeekTimeWhileSeeking().collectAsState()
     val seekText by viewModel.seekText.collectAsState()
     val currentChapter by viewModel.currentChapter.collectAsState()
-    val chapters by viewModel.chapters.collectAsState()
+    val chapters by viewModel.chapters.collectAsState(persistentListOf())
     val currentBrightness by viewModel.currentBrightness.collectAsState()
+
+    val currentPosition = (position ?: 0).toFloat()
+    val totalDuration = (duration ?: 0).toFloat()
 
     val playerTimeToDisappear by playerPreferences.playerTimeToDisappear().collectAsState()
     var resetControls by remember { mutableStateOf(true) }
     val isSeekingUI by viewModel.isSeekingUI.collectAsState()
     val seekPosition by viewModel.seekPosition.collectAsState()
-    val chaptersList = remember(chapters) {
-        chapters.map { it.toSegment() }
-    }
+    val chaptersList = chapters
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -185,7 +186,7 @@ fun PlayerControls(
         isSeekingUI,
         resetControls,
     ) {
-        if (controlsShown && !paused && !isSeekingUI) {
+        if (controlsShown && paused == false && !isSeekingUI) {
             delay(playerTimeToDisappear.toLong())
             viewModel.hideControls()
         }
@@ -398,7 +399,7 @@ fun PlayerControls(
                  AnimatedVisibility(
                     visible = (
                         (controlsShown && !areControlsLocked || gestureSeekAmount != null) ||
-                            ((isLoading || pausedForCache) && !isStopped) ||
+                            ((isLoading || pausedForCache == true) && !isStopped) ||
                             isLoadingEpisode
                         ) && !isLongPressing,
                     enter = fadeIn(playerControlsEnterAnimationSpec()),
@@ -417,12 +418,12 @@ fun PlayerControls(
                         hasNext = hasNextEpisode,
                         onSkipNext = { viewModel.changeEpisode(false) },
                         isStopped = isStopped,
-                        isLoading = isLoading || pausedForCache,
+                        isLoading = isLoading || pausedForCache == true,
                         isLoadingEpisode = isLoadingEpisode,
                         controlsShown = controlsShown,
                         areControlsLocked = areControlsLocked,
                         showLoadingCircle = showLoadingCircle,
-                        paused = paused,
+                        paused = paused == true,
                         gestureSeekAmount = gestureSeekAmount,
                         onPlayPauseClick = viewModel::pauseUnpause,
                         enter = fadeIn(playerControlsEnterAnimationSpec()),
@@ -500,23 +501,23 @@ fun PlayerControls(
                     val preciseSeeking by gesturePreferences.playerSmoothSeek().collectAsState()
 
                     var wasPlayerAlreadyPause by remember { mutableStateOf(false) }
-                    var sliderPosition by remember { androidx.compose.runtime.mutableFloatStateOf(position) }
+                    var sliderPosition by remember { androidx.compose.runtime.mutableFloatStateOf(currentPosition) }
                     var lastTargetSeekPos by remember { mutableStateOf<Float?>(null) }
 
-                    LaunchedEffect(position, seekPosition, isSeekingUI) {
+                    LaunchedEffect(currentPosition, seekPosition, isSeekingUI) {
                         if (isSeekingUI) {
                             sliderPosition = seekPosition
                         } else {
                             val target = lastTargetSeekPos
                             if (target != null) {
-                                if (kotlin.math.abs(position - target) > 1.5f) {
+                                if (kotlin.math.abs(currentPosition - target) > 1.5f) {
                                     sliderPosition = target
                                 } else {
-                                    sliderPosition = position
+                                    sliderPosition = currentPosition
                                     lastTargetSeekPos = null
                                 }
                             } else {
-                                sliderPosition = position
+                                sliderPosition = currentPosition
                             }
                         }
                     }
@@ -530,11 +531,11 @@ fun PlayerControls(
 
                     SeekbarWithTimers(
                         position = sliderPosition,
-                        duration = duration,
+                        duration = totalDuration,
                         readAheadValue = readAhead,
                         onValueChange = {
                             if (!viewModel.isSeekingUI.value) {
-                                wasPlayerAlreadyPause = viewModel.paused.value
+                                wasPlayerAlreadyPause = viewModel.paused.value == true
                                 viewModel.pause()
                                 viewModel.updateIsSeeking(true)
                             }
@@ -725,7 +726,7 @@ fun PlayerControls(
                         val currentSeekPosition = androidx.compose.runtime.rememberUpdatedState(seekPosition.toLong())
                         remember { { currentSeekPosition.value } }
                     },
-                    durationS = duration.toLong(),
+                    durationS = (duration ?: 0).toLong(),
                     chapters = chaptersList,
                     modifier = Modifier.fillMaxWidth().constrainAs(thumbnail) {
                         bottom.linkTo(seekbar.top, spacing.medium)
@@ -797,7 +798,7 @@ fun PlayerControls(
             autoScrollToDefault = autoScrollToDefault,
             displayHosters = Pair(showFailedHosters, emptyHosters),
 
-            chapter = currentChapter?.toSegment(),
+            chapter = currentChapter,
             chapters = chaptersList,
             onSeekToChapter = {
                 viewModel.selectChapter(it)
@@ -812,14 +813,14 @@ fun PlayerControls(
             // ANZ <--
             sleepTimerTimeRemaining = sleepTimerTimeRemaining,
             onStartSleepTimer = viewModel::startTimer,
-            buttons = customButtons.getButtons(),
+            buttons = customButtons,
 
             showSubtitles = showSubtitles,
             onToggleShowSubtitles = { subtitlePreferences.screenshotSubtitles().set(it) },
             cachePath = viewModel.cachePath,
             onSetAsCover = viewModel::setAsCover,
-            onShare = { viewModel.shareImage(it, viewModel.pos.value.toInt()) },
-            onSave = { viewModel.saveImage(it, viewModel.pos.value.toInt()) },
+            onShare = { viewModel.shareImage(it, viewModel.pos.value?.toInt()) },
+            onSave = { viewModel.saveImage(it, viewModel.pos.value?.toInt()) },
             takeScreenshot = viewModel::takeScreenshot,
             onDismissScreenshot = {
                 viewModel.showSheet(Sheets.None)

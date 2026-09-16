@@ -60,5 +60,9 @@ class PlayerObserver(val activity: PlayerActivity) :
             }
         }
     }
+
+    companion object {
+        const val TRACK_LOAD_FAILURE = "Can not open external file "
+    }
 }
 // ANZ <--

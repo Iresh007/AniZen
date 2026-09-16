@@ -28,8 +28,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.Bitmap
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.model.ThumbnailInfo
+import eu.kanade.tachiyomi.animesource.model.TileInfo
 import eu.kanade.tachiyomi.data.filler.AnimeFillerListFetcher
-import eu.kanade.tachiyomi.ui.player.settings.DefaultStreamPreferenceStore
+import eu.kanade.tachiyomi.ui.player.utils.DefaultStreamPreferenceStore
 import eu.kanade.tachiyomi.ui.player.utils.DefaultStreamSelector
 import eu.kanade.tachiyomi.util.episode.EpisodeSeasonUtils
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,8 +51,8 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.anime.interactor.SetAnimeViewerFlags
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.episode.model.toDbEpisode
-import eu.kanade.domain.source.interactor.GetIncognitoState
 import eu.kanade.domain.sync.SyncPreferences
+import eu.kanade.domain.track.interactor.TrackEpisode
 import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.tachiyomi.animesource.AnimeSource
@@ -71,7 +73,6 @@ import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.track.anilist.Anilist
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeList
 import eu.kanade.tachiyomi.source.online.HttpSource
-import eu.kanade.tachiyomi.source.online.all.MergedSource
 import eu.kanade.tachiyomi.ui.player.controls.components.IndexedSegment
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.HosterState
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.getChangedAt
@@ -88,16 +89,11 @@ import eu.kanade.tachiyomi.ui.player.utils.AniSkipApi
 import eu.kanade.tachiyomi.ui.player.utils.ChapterUtils
 import eu.kanade.tachiyomi.ui.player.utils.ChapterUtils.Companion.getStringRes
 import eu.kanade.tachiyomi.ui.reader.SaveImageNotifier
-import eu.kanade.tachiyomi.util.chapter.filterDownloaded
-import eu.kanade.tachiyomi.util.chapter.removeDuplicates
-import eu.kanade.tachiyomi.util.editBackground
 import eu.kanade.tachiyomi.util.editCover
-import eu.kanade.tachiyomi.util.editThumbnail
 import eu.kanade.tachiyomi.util.lang.byteSize
 import eu.kanade.tachiyomi.util.lang.takeBytes
 import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.cacheImageDir
-import exh.source.MERGED_SOURCE_ID
 import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
@@ -136,7 +132,6 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.anime.interactor.GetAnime
 import tachiyomi.domain.anime.model.Anime
 import tachiyomi.domain.category.interactor.GetCategories
-import tachiyomi.domain.chapter.interactor.GetMergedChaptersByMangaId
 import tachiyomi.domain.custombuttons.interactor.GetCustomButtons
 import tachiyomi.domain.custombuttons.model.CustomButton
 import tachiyomi.domain.download.service.DownloadPreferences
@@ -144,15 +139,14 @@ import tachiyomi.domain.episode.interactor.GetEpisodesByAnimeId
 import tachiyomi.domain.episode.interactor.UpdateEpisode
 import tachiyomi.domain.episode.model.EpisodeUpdate
 import tachiyomi.domain.episode.service.getEpisodeSort
-import tachiyomi.domain.history.interactor.GetNextChapters
+import tachiyomi.domain.history.interactor.GetNextEpisodes
 import tachiyomi.domain.history.interactor.UpsertHistory
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.manga.interactor.GetMergedMangaById
-import tachiyomi.domain.manga.interactor.GetMergedReferencesById
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.domain.track.interactor.GetTracks
+import tachiyomi.i18n.MR
 
 import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
@@ -162,7 +156,6 @@ import java.io.InputStream
 import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
-import eu.kanade.domain.track.interactor.TrackChapter as TrackEpisode
 import tachiyomi.domain.episode.model.Episode as DomainEpisode
 
 class PlayerViewModel @JvmOverloads constructor(
@@ -177,7 +170,7 @@ class PlayerViewModel @JvmOverloads constructor(
     private val trackPreferences: TrackPreferences = Injekt.get(),
     private val trackEpisode: TrackEpisode = Injekt.get(),
     private val getAnime: GetAnime = Injekt.get(),
-    private val getNextChapters: GetNextChapters = Injekt.get(),
+    private val getNextEpisodes: GetNextEpisodes = Injekt.get(),
     private val getEpisodesByAnimeId: GetEpisodesByAnimeId = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
     private val getTracks: GetTracks = Injekt.get(),
@@ -187,23 +180,15 @@ class PlayerViewModel @JvmOverloads constructor(
     internal val playerPreferences: PlayerPreferences = Injekt.get(),
     private val audioPreferences: AudioPreferences = Injekt.get(),
     private val subtitlePreferences: SubtitlePreferences = Injekt.get(),
-    private val gesturePreferences: GesturePreferences = Injekt.get(),
+    internal val gesturePreferences: GesturePreferences = Injekt.get(),
     private val basePreferences: BasePreferences = Injekt.get(),
     private val getCustomButtons: GetCustomButtons = Injekt.get(),
     private val trackSelect: TrackSelect = Injekt.get(),
     private val audioManager: AudioManager = Injekt.get(),
     brightnessManager: BrightnessManager = Injekt.get(),
-    // SY -->
     uiPreferences: UiPreferences = Injekt.get(),
-    private val getMergedMangaById: GetMergedMangaById = Injekt.get(),
-    private val getMergedReferencesById: GetMergedReferencesById = Injekt.get(),
-    private val getMergedChaptersByMangaId: GetMergedChaptersByMangaId = Injekt.get(),
-    // SY <--
-    // ANK -->
-    private val getIncognitoState: GetIncognitoState = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
     private val syncPreferences: SyncPreferences = Injekt.get(),
-    // ANK <--
     // ANZ -->
     private val animeFillerListFetcher: AnimeFillerListFetcher = AnimeFillerListFetcher(),
     // ANZ <--
@@ -337,6 +322,15 @@ class PlayerViewModel @JvmOverloads constructor(
     private val _videoAspectOverride = MutableStateFlow(-1.0)
     val videoAspectOverride = _videoAspectOverride.asStateFlow()
 
+    // ANZ -->
+    fun updateVideo(video: Video) {
+        _currentVideo.update { video }
+    }
+    // ANZ <--
+
+    val chapters = mpv.propFlow<MPVNode>("chapter-list")
+        .map { (it?.toObject<List<ChapterNode>>(json) ?: persistentListOf()).map { it.toSegment() }.toImmutableList() }
+
     val currentChapter = chapters.combine(mpv.propFlow<Int>("chapter")) { list, idx ->
         idx?.let { list.getOrNull(it) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -375,9 +369,6 @@ class PlayerViewModel @JvmOverloads constructor(
                     ?: persistentListOf()
                 ).toImmutableList()
         }
-
-    val chapters = mpv.propFlow<MPVNode>("chapter-list")
-        .map { (it?.toObject<List<ChapterNode>>(json) ?: persistentListOf()).map { it.toSegment() }.toImmutableList() }
 
     private val _skipIntroText = MutableStateFlow<String?>(null)
     val skipIntroText = _skipIntroText.asStateFlow()
@@ -419,22 +410,16 @@ class PlayerViewModel @JvmOverloads constructor(
 
     // ANK -->
     private val unfilteredEpisodeList by lazy {
-        val anime = anime!!
+        val anime = currentAnime.value ?: return@lazy emptyList()
         runBlocking {
-            // KMK -->
-            if (anime.source == MERGED_SOURCE_ID) {
-                getMergedChaptersByMangaId.await(anime.id, dedupe = false, applyFilter = false)
-            } else {
-                getEpisodesByAnimeId.await(anime.id, applyFilter = false)
-            }
-            // KMK <--
+            getEpisodesByAnimeId.await(anime.id)
         }
     }
     // ANK <--
 
     init {
         viewModelScope.launchIO {
-            subtitlePreferences.subtitleSystemFonts.changes().collectLatest {
+            subtitlePreferences.subtitleSystemFonts().changes().collectLatest {
                 _fontList.update { _ -> fetchFonts(it).toPersistentList() }
             }
         }
@@ -1109,8 +1094,29 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun changeMPVVolumeTo(volume: Int) {
+        currentMPVVolume.update { volume }
         mpv.setPropertyInt("volume", volume)
     }
+
+    // ANZ -->
+    fun setVolume(percent: Float) {
+        val boostCap = (volumeBoostCap ?: audioPreferences.volumeBoostCap().get()).toFloat()
+        val totalMax = 100f + boostCap
+        val clamped = percent.coerceIn(0f, totalMax)
+        if (clamped <= 100f) {
+            val systemVol = Math.round(clamped / 100f * maxVolume)
+            changeVolumeTo(systemVol)
+            if (currentMPVVolume.value != 100) {
+                changeMPVVolumeTo(100)
+            }
+        } else {
+            if (currentVolume.value != maxVolume) {
+                changeVolumeTo(maxVolume)
+            }
+            changeMPVVolumeTo(clamped.toInt())
+        }
+    }
+    // ANZ <--
 
     fun displayVolumeSlider() {
         isVolumeSliderShown.update { true }
@@ -1428,11 +1434,8 @@ class PlayerViewModel @JvmOverloads constructor(
     private val eventChannel = Channel<Event>()
     val eventFlow = eventChannel.receiveAsFlow()
 
-    val incognitoMode: Boolean by lazy { getIncognitoState.await(currentSource.value?.id) }
+    val incognitoMode: Boolean get() = basePreferences.incognitoMode().get()
     private val downloadAheadAmount = downloadPreferences.autoDownloadWhileReading().get()
-
-    internal val relativeTime = uiPreferences.relativeTime().get()
-    internal val dateFormat = uiPreferences.dateFormat().get()
 
     /**
      * The position in the current video. Used to restore from process kill.
@@ -1625,20 +1628,6 @@ class PlayerViewModel @JvmOverloads constructor(
         return try {
             val anime = getAnime.await(animeId)
             if (anime != null) {
-                // SY -->
-                sourceManager.isInitialized.first { it }
-                val source = sourceManager.getOrStub(anime.source)
-                val mergedReferences = if (source is MergedSource) {
-                    getMergedReferencesById.await(anime.id)
-                } else {
-                    emptyList()
-                }
-                val mergedManga = if (source is MergedSource) {
-                    getMergedMangaById.await(anime.id)
-                        .associateBy { it.id }
-                } else {
-                    emptyMap()
-                }
                 _currentAnime.update { _ -> anime }
                 animeTitle.update { _ -> anime.title }
                 sourceManager.isInitialized.first { it }
@@ -2258,7 +2247,7 @@ class PlayerViewModel @JvmOverloads constructor(
 
     private fun downloadNextEpisodes() {
         if (downloadAheadAmount == 0) return
-        val anime = anime ?: return
+        val anime = currentAnime.value ?: return
 
         // Only download ahead if current + next episode is already downloaded too to avoid jank
         if (getCurrentEpisodeIndex() == currentPlaylist.value.lastIndex) return
@@ -2266,22 +2255,17 @@ class PlayerViewModel @JvmOverloads constructor(
 
         val nextEpisode = currentPlaylist.value[getCurrentEpisodeIndex() + 1]
 
+        val episodesAreDownloaded =
+            EpisodeLoader.isDownload(currentEpisode.toDomainEpisode()!!, anime) &&
+                EpisodeLoader.isDownload(nextEpisode.toDomainEpisode()!!, anime)
+
         viewModelScope.launchIO {
-            val episodesAreDownloaded =
-                EpisodeLoader.isDownload(currentEpisode.toDomainEpisode()!!, anime) &&
-                    EpisodeLoader.isDownload(nextEpisode.toDomainEpisode()!!, anime)
-
-            if (!episodesAreDownloaded) return@launchIO
-
-            val episodesToDownload = getNextChapters.await(anime.id, nextEpisode.id!!)
-                .run {
-                    if (playerPreferences.skipDupe().get()) {
-                        removeDuplicates(nextEpisode.toDomainEpisode()!!)
-                    } else {
-                        this
-                    }
-                }
+            if (!episodesAreDownloaded) {
+                return@launchIO
+            }
+            val episodesToDownload = getNextEpisodes.await(anime.id, nextEpisode.id!!)
                 .take(downloadAheadAmount)
+                .filterNot { EpisodeLoader.isDownload(it, anime) }
             downloadManager.downloadEpisodes(anime, episodesToDownload)
         }
     }
@@ -2490,27 +2474,21 @@ class PlayerViewModel @JvmOverloads constructor(
     /**
      * Sets the screenshot as art and notifies the UI of the result.
      */
-    fun setAsCover(artType: ArtType, imageStream: () -> InputStream) {
-        val anime = anime ?: return
-        val episode = currentEpisode.value ?: return
+    fun setAsCover(imageStream: () -> InputStream) {
+        val anime = currentAnime.value ?: return
 
         viewModelScope.launchNonCancellable {
             val result = try {
-                when (artType) {
-                    ArtType.Cover -> anime.editCover(Injekt.get(), imageStream())
-                    ArtType.Background -> anime.editBackground(Injekt.get(), imageStream())
-                    ArtType.Thumbnail -> episode.editThumbnail(anime, Injekt.get(), imageStream())
-                }
-
-                if (anime.isLocal() || anime.favorite) {
+                anime.editCover(Injekt.get(), imageStream())
+                if (currentSource.value?.isLocal() == true || anime.favorite) {
                     SetAsCover.Success
                 } else {
                     SetAsCover.AddToLibraryFirst
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 SetAsCover.Error
             }
-            eventChannel.send(Event.SetCoverResult(result, artType))
+            eventChannel.send(Event.SetCoverResult(result))
         }
     }
 
@@ -2526,7 +2504,7 @@ class PlayerViewModel @JvmOverloads constructor(
         if (incognitoMode) return
         if (!trackPreferences.autoUpdateTrack().get()) return
 
-        val anime = anime ?: return
+        val anime = currentAnime.value ?: return
         val context = Injekt.get<Application>()
 
         viewModelScope.launchNonCancellable {
@@ -2845,22 +2823,9 @@ class PlayerViewModel @JvmOverloads constructor(
         }
     }
 
-    fun changeMPVVolumeTo(volume: Int) {
-        currentMPVVolume.update { volume }
-        mpv.setPropertyInt("volume", volume)
-    }
-
     fun setMPVVolume(volume: Int) {
         if (volume != currentMPVVolume.value) isVolumeSliderShown.update { true }
         currentMPVVolume.update { volume }
-    }
-
-    fun displayBrightnessSlider() {
-        isBrightnessSliderShown.update { true }
-    }
-
-    fun displayVolumeSlider() {
-        isVolumeSliderShown.update { true }
     }
 
     fun setPropertyDouble(property: String, value: Double) {

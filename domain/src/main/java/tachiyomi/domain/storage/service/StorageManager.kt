@@ -44,6 +44,9 @@ class StorageManager(
                         mpvDir.createDirectory(FONTS_PATH)
                         mpvDir.createDirectory(SCRIPTS_PATH)
                         mpvDir.createDirectory(SCRIPT_OPTS_PATH)
+                        // ANZ -->
+                        mpvDir.createDirectory(SHADERS_PATH)
+                        // ANZ <--
                     }
                 }
                 _changes.send(Unit)
@@ -80,6 +83,12 @@ class StorageManager(
         return getMPVConfigDirectory()?.createDirectory(SCRIPT_OPTS_PATH)
     }
 
+    // ANZ -->
+    fun getShadersDirectory(): UniFile? {
+        return getMPVConfigDirectory()?.createDirectory(SHADERS_PATH)
+    }
+    // ANZ <--
+
     fun getMPVConfigDirectory(): UniFile? {
         return baseDir?.createDirectory(MPV_CONFIG_PATH)
     }
@@ -98,6 +107,9 @@ private const val MPV_CONFIG_PATH = "mpv-config"
 private const val FONTS_PATH = "fonts"
 const val SCRIPTS_PATH = "scripts"
 const val SCRIPT_OPTS_PATH = "script-opts"
+// ANZ -->
+const val SHADERS_PATH = "shaders"
+// ANZ <--
 
 // SY -->
 private const val LOGS_PATH = "logs"

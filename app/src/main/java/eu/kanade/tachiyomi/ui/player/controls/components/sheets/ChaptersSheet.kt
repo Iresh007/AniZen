@@ -35,10 +35,14 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 
+// ANZ -->
+import kotlinx.collections.immutable.ImmutableList
+// ANZ <--
+
 @Composable
 fun ChaptersSheet(
-    chapters: List<Segment>,
-    currentChapter: Segment,
+    chapters: ImmutableList<Segment>,
+    currentChapter: Segment?,
     onClick: (Segment) -> Unit,
     onDismissRequest: () -> Unit,
     dismissSheet: Boolean,

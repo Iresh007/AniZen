@@ -23,13 +23,14 @@
 package eu.kanade.tachiyomi.ui.player
 
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.theme.DynamicTachiyomiTheme
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.network.HttpServer
-import eu.kanade.tachiyomi.util.asAnimeCover
 import eu.kanade.tachiyomi.util.system.CoverColorObserver
+import tachiyomi.domain.anime.model.asAnimeCover
 import tachiyomi.presentation.core.util.collectAsState as collectAsStatePref
 
 
@@ -118,7 +119,6 @@ import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.launchUI
 import tachiyomi.core.common.util.lang.withUIContext
-import tachiyomi.core.common.util.system.UrlUtils
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 
@@ -133,9 +133,9 @@ class PlayerActivity : BaseActivity() {
     // ANZ -->
     private var httpServer: HttpServer? = null
     internal val viewModel by viewModels<PlayerViewModel>()
+    internal val player by lazy { AniyomiMPVView(this, null) }
     // ANZ <--
     private val mpv by lazy { viewModel.mpv }
-    private val player by lazy { AniyomiMPVView(this, null) }
     private val playerObserver by lazy { PlayerObserver(this) }
     private val windowInsetsController by lazy { WindowCompat.getInsetsController(window, window.decorView) }
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
@@ -1556,25 +1556,34 @@ class PlayerActivity : BaseActivity() {
     private fun updateDiscordRPC(exitingPlayer: Boolean) {
         if (!connectionsPreferences.enableDiscordRPC().get()) return
 
-        DiscordRPCService.discordScope.launchIO {
+        lifecycleScope.launchIO {
             try {
                 if (!exitingPlayer) {
-                    // ANK -->
-                    val timePos = viewModel.pos.value ?: return@launchIO
-                    val duration = viewModel.duration.value ?: 1440
-                    // ANK <--
-
-                    val currentPosition = timePos.toLong() * 1000
-                    val startTimestamp = Calendar.getInstance().apply {
-                        timeInMillis = System.currentTimeMillis() - currentPosition
-                    }
-                    val endTimestamp = Calendar.getInstance().apply {
-                        timeInMillis = startTimestamp.timeInMillis
-                        add(Calendar.SECOND, duration)
-                    }
-
                     val anime = viewModel.currentAnime.value ?: return@launchIO
                     val episode = viewModel.currentEpisode.value ?: return@launchIO
+                    val isPaused = viewModel.paused.value == true
+
+                    val (startTime, endTime) = if (isPaused) {
+                        Pair(0L, 0L)
+                    } else {
+                        val currentPosition = (viewModel.pos.value ?: 0).toLong() * 1000
+                        val duration = (viewModel.duration.value ?: 1440).toLong() * 1000
+
+                        val startTimestamp = Calendar.getInstance().apply {
+                            timeInMillis = System.currentTimeMillis() - currentPosition
+                        }
+                        val endTimestamp = Calendar.getInstance().apply {
+                            timeInMillis = startTimestamp.timeInMillis
+                            add(Calendar.MILLISECOND, duration.toInt())
+                        }
+                        Pair(startTimestamp.timeInMillis, endTimestamp.timeInMillis)
+                    }
+
+                    val formattedEpisodeNumber = if (connectionsPreferences.useChapterTitles().get()) {
+                        episode.name
+                    } else {
+                        episode.episode_number.toString()
+                    }
 
                     DiscordRPCService.setPlayerActivity(
                         context = this@PlayerActivity,
@@ -1582,20 +1591,16 @@ class PlayerActivity : BaseActivity() {
                             incognitoMode = viewModel.currentSource.value?.isNsfw() == true || viewModel.incognitoMode,
                             animeId = anime.id,
                             animeTitle = anime.ogTitle,
-                            thumbnailUrl = anime.thumbnailUrl.takeIf { UrlUtils.isOnlineUrl(it) } ?: anime.ogThumbnailUrl,
-                            episodeNumber = if (connectionsPreferences.useChapterTitles().get()) {
-                                episode.name
-                            } else {
-                                episode.episode_number.toString()
-                            },
-                            startTimestamp = startTimestamp.timeInMillis,
-                            endTimestamp = endTimestamp.timeInMillis,
+                            thumbnailUrl = anime.thumbnailUrl ?: anime.ogThumbnailUrl,
+                            episodeNumber = formattedEpisodeNumber,
+                            startTimestamp = startTime,
+                            endTimestamp = endTime,
+                            isPaused = isPaused,
                         ),
                     )
                 } else {
-                    with(DiscordRPCService) {
-                        setScreen(this@PlayerActivity)
-                    }
+                    val lastUsedScreen = DiscordRPCService.lastUsedScreen
+                    DiscordRPCService.setAnimeScreen(this@PlayerActivity, lastUsedScreen)
                 }
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR) { "Error updating Discord RPC: ${e.message}" }

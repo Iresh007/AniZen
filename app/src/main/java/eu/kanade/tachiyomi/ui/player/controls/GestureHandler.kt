@@ -274,7 +274,7 @@ fun GestureHandler(
                             longPressJob?.cancel()
                             longPressJob = scope.launch {
                                 delay(viewConfiguration.longPressTimeoutMillis)
-                                val isPaused = viewModel.paused.value
+                                val isPaused = viewModel.paused.value == true
                                 wasPaused = isPaused
                                 if (isPaused) {
                                     when (pausedLongPressAction) {
@@ -334,7 +334,7 @@ fun GestureHandler(
                                 }
                             } else {
                                 pointer.consume()
-                                if (longPressSliding && isSpeedLongPress && !viewModel.paused.value) {
+                                if (longPressSliding && isSpeedLongPress && viewModel.paused.value == false) {
                                     val dragDistance = abs(pointer.position.x - startPosition.x)
                                     if (hasInitializedDragSpeed || dragDistance > viewConfiguration.touchSlop) {
                                         if (!hasInitializedDragSpeed) {
@@ -412,7 +412,8 @@ fun GestureHandler(
                 if (areControlsLocked) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
-                    var startingPosition = position.toInt()
+                    val totalDuration = (duration ?: 0).toFloat()
+                    var startingPosition = (position ?: 0).toInt()
                     var startingX = down.position.x
                     var startingY = down.position.y
                     var wasPlayerAlreadyPause = false
@@ -430,7 +431,7 @@ fun GestureHandler(
                                 viewModel.gestureSeekAmount.update { null }
                                 viewModel.hideSeekBar()
                                 viewModel.updateIsSeeking(false)
-                                viewModel.seekTo(viewModel.seekPosition.value.coerceIn(0f, duration).toInt(), preciseSeeking)
+                                viewModel.seekTo(viewModel.seekPosition.value.coerceIn(0f, totalDuration).toInt(), preciseSeeking)
                                 if (!wasPlayerAlreadyPause) viewModel.unpause()
                             }
                             break
@@ -441,7 +442,7 @@ fun GestureHandler(
                                 viewModel.gestureSeekAmount.update { null }
                                 viewModel.hideSeekBar()
                                 viewModel.updateIsSeeking(false)
-                                viewModel.seekTo(viewModel.seekPosition.value.coerceIn(0f, duration).toInt(), preciseSeeking)
+                                viewModel.seekTo(viewModel.seekPosition.value.coerceIn(0f, totalDuration).toInt(), preciseSeeking)
                                 if (!wasPlayerAlreadyPause) viewModel.unpause()
                             }
                             break
@@ -452,9 +453,9 @@ fun GestureHandler(
                             if (diffX > viewConfiguration.touchSlop * 1.5f || diffY > viewConfiguration.touchSlop * 1.5f) {
                                 if (diffX > diffY && seekGesture) {
                                     dragDirection = 1
-                                    startingPosition = position.toInt()
+                                    startingPosition = (position ?: 0).toInt()
                                     startingX = pointer.position.x
-                                    wasPlayerAlreadyPause = viewModel.paused.value
+                                    wasPlayerAlreadyPause = viewModel.paused.value == true
                                     viewModel.pause()
                                     viewModel.updateIsSeeking(true)
                                 } else if (diffY > diffX && gestureVolumeBrightness) {
@@ -467,7 +468,7 @@ fun GestureHandler(
                             }
                         } else if (dragDirection == 1) {
                             calculateNewHorizontalGestureValue(startingPosition.toFloat(), startingX, pointer.position.x, 0.15f).let {
-                                val targetPos = it.coerceIn(0f, duration)
+                                val targetPos = it.coerceIn(0f, totalDuration)
                                 viewModel.gestureSeekAmount.update { _ -> Pair(startingPosition, (targetPos - startingPosition).toInt()) }
                                 viewModel.updateSeekPos(targetPos)
                                 viewModel.scrubSeekTo(targetPos.toInt(), false)
