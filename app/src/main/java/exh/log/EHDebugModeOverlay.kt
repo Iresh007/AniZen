@@ -14,12 +14,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.PlayerStats
-import `is`.xyz.mpv.MPVLib
+import `is`.xyz.mpv.MPV
 import kotlinx.coroutines.delay
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
@@ -27,34 +29,38 @@ import java.util.Locale
 
 @Composable
 fun InterpolationStatsOverlay() {
+    // ANZ -->
+    val activity = LocalContext.current as? PlayerActivity
+    val mpv = activity?.viewModel?.mpv
     LaunchedEffect(Unit) {
         while (true) {
-            PlayerStats.estimatedVfFps.value = MPVLib.getPropertyDouble("estimated-vf-fps") ?: 0.0
-            PlayerStats.videoParamsFps.value = MPVLib.getPropertyDouble("video-params/fps") ?: 0.0
-            PlayerStats.containerFps.value = MPVLib.getPropertyDouble("container-fps") ?: 0.0
-            PlayerStats.displayFps.value = MPVLib.getPropertyDouble("override-display-fps")
-                ?: MPVLib.getPropertyDouble("display-fps")
+            PlayerStats.estimatedVfFps.value = mpv?.getPropertyDouble("estimated-vf-fps") ?: 0.0
+            PlayerStats.videoParamsFps.value = mpv?.getPropertyDouble("video-params/fps") ?: 0.0
+            PlayerStats.containerFps.value = mpv?.getPropertyDouble("container-fps") ?: 0.0
+            PlayerStats.displayFps.value = mpv?.getPropertyDouble("override-display-fps")
+                ?: mpv?.getPropertyDouble("display-fps")
                 ?: 0.0
-            PlayerStats.estimatedDisplayFps.value = MPVLib.getPropertyDouble("estimated-display-fps") ?: 0.0
+            PlayerStats.estimatedDisplayFps.value = mpv?.getPropertyDouble("estimated-display-fps") ?: 0.0
 
-            PlayerStats.isInterpolating.value = MPVLib.getPropertyBoolean("interpolation") ?: false
-            PlayerStats.videoSync.value = MPVLib.getPropertyString("video-sync") ?: ""
-            PlayerStats.tscale.value = MPVLib.getPropertyString("tscale") ?: ""
-            PlayerStats.delayedFrames.value = MPVLib.getPropertyInt("vo-delayed-frame-count")?.toLong() ?: 0L
-            PlayerStats.mistime.value = MPVLib.getPropertyDouble("mistime") ?: 0.0
-            PlayerStats.voPasses.value = (MPVLib.getPropertyString("vo-passes")?.toLongOrNull() ?: 0L)
+            PlayerStats.isInterpolating.value = mpv?.getPropertyBoolean("interpolation") ?: false
+            PlayerStats.videoSync.value = mpv?.getPropertyString("video-sync") ?: ""
+            PlayerStats.tscale.value = mpv?.getPropertyString("tscale") ?: ""
+            PlayerStats.delayedFrames.value = mpv?.getPropertyInt("vo-delayed-frame-count")?.toLong() ?: 0L
+            PlayerStats.mistime.value = mpv?.getPropertyDouble("mistime") ?: 0.0
+            PlayerStats.voPasses.value = (mpv?.getPropertyString("vo-passes")?.toLongOrNull() ?: 0L)
 
-            PlayerStats.hwdec.value = MPVLib.getPropertyString("hwdec-current") ?: ""
-            PlayerStats.videoW.value = MPVLib.getPropertyInt("video-params/w")?.toLong() ?: 0L
-            PlayerStats.videoH.value = MPVLib.getPropertyInt("video-params/h")?.toLong() ?: 0L
-            PlayerStats.videoOutW.value = MPVLib.getPropertyInt("video-out-params/w")?.toLong() ?: 0L
-            PlayerStats.videoOutH.value = MPVLib.getPropertyInt("video-out-params/h")?.toLong() ?: 0L
-            PlayerStats.dwidth.value = MPVLib.getPropertyInt("dwidth")?.toLong() ?: 0L
-            PlayerStats.dheight.value = MPVLib.getPropertyInt("dheight")?.toLong() ?: 0L
+            PlayerStats.hwdec.value = mpv?.getPropertyString("hwdec-current") ?: ""
+            PlayerStats.videoW.value = mpv?.getPropertyInt("video-params/w")?.toLong() ?: 0L
+            PlayerStats.videoH.value = mpv?.getPropertyInt("video-params/h")?.toLong() ?: 0L
+            PlayerStats.videoOutW.value = mpv?.getPropertyInt("video-out-params/w")?.toLong() ?: 0L
+            PlayerStats.videoOutH.value = mpv?.getPropertyInt("video-out-params/h")?.toLong() ?: 0L
+            PlayerStats.dwidth.value = mpv?.getPropertyInt("dwidth")?.toLong() ?: 0L
+            PlayerStats.dheight.value = mpv?.getPropertyInt("dheight")?.toLong() ?: 0L
 
             delay(1000)
         }
     }
+    // ANZ <--
     val vfFps by PlayerStats.estimatedVfFps.collectAsState(0.0)
     val sourceFps by PlayerStats.videoParamsFps.collectAsState(0.0)
     val containerFps by PlayerStats.containerFps.collectAsState(0.0)

@@ -140,8 +140,10 @@ internal class ExtensionApi {
         val normalizedRepoUrl = repoUrl.substringBefore("/index.min.json").removeSuffix("/")
         return this
             .filter {
+                // ANZ -->
                 val libVersion = it.extractLibVersion()
-                libVersion >= ExtensionLoader.LIB_VERSION_MIN && libVersion <= ExtensionLoader.LIB_VERSION_MAX
+                libVersion >= ExtensionLoader.LIB_VERSION_MIN && libVersion < ExtensionLoader.LIB_VERSION_MAX + 1.0
+                // ANZ <--
             }
             .map {
                 val contentWarning = when (it.contentWarning) {

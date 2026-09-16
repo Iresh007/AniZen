@@ -67,16 +67,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import eu.kanade.presentation.player.components.PlayerSheet
+import androidx.compose.ui.platform.LocalContext
 import eu.kanade.tachiyomi.ui.player.Decoder
 import eu.kanade.tachiyomi.ui.player.LongPressAction
 import eu.kanade.tachiyomi.ui.player.PausedLongPressAction
+import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.execute
 import eu.kanade.tachiyomi.ui.player.executeLongPress
 import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.AudioChannels
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
-import `is`.xyz.mpv.MPVLib
 import tachiyomi.domain.custombuttons.model.CustomButton
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -99,6 +100,10 @@ fun MoreSheet(
     val advancedPreferences = remember { Injekt.get<AdvancedPlayerPreferences>() }
     val audioPreferences = remember { Injekt.get<AudioPreferences>() }
     val gesturePreferences = remember { Injekt.get<GesturePreferences>() }
+    // ANZ -->
+    val activity = LocalContext.current as? PlayerActivity
+    val mpv = activity?.viewModel?.mpv
+    // ANZ <--
     val longPressAction by gesturePreferences.longPressAction().collectAsState()
     val pausedLongPressAction by gesturePreferences.pausedLongPressAction().collectAsState()
     val longPressSliding by gesturePreferences.gestureLongPressSpeedSliding().collectAsState()
@@ -214,28 +219,30 @@ fun MoreSheet(
                             
                             if (isPageSix) {
                                 // If switching TO page 6, hide internal stats and show native Page 6
+                                // ANZ -->
                                 if (wasInternalPage) {
-                                    MPVLib.command(arrayOf("script-binding", "stats/display-stats-toggle"))
+                                    mpv?.command("script-binding", "stats/display-stats-toggle")
                                 }
-                                MPVLib.command(arrayOf("script-message", "display-page-6"))
+                                mpv?.command("script-message", "display-page-6")
                             } else {
                                 // If switching away FROM Page 6
                                 if (wasPageSix) {
-                                    MPVLib.command(arrayOf("script-message", "hide-page-6"))
+                                    mpv?.command("script-message", "hide-page-6")
                                 }
-                                
+
                                 if (isInternalPage) {
                                     // If switching TO an internal page (1-5)
                                     if (statisticsPage == 0 || wasPageSix) {
-                                        MPVLib.command(arrayOf("script-binding", "stats/display-stats-toggle"))
+                                        mpv?.command("script-binding", "stats/display-stats-toggle")
                                     }
-                                    MPVLib.command(arrayOf("script-binding", "stats/display-page-$page"))
+                                    mpv?.command("script-binding", "stats/display-page-$page")
                                 } else if (page == 0) {
                                     // If turning stats OFF
                                     if (wasInternalPage) {
-                                        MPVLib.command(arrayOf("script-binding", "stats/display-stats-toggle"))
+                                        mpv?.command("script-binding", "stats/display-stats-toggle")
                                     }
                                 }
+                                // ANZ <--
                             }
                             advancedPreferences.playerStatisticsPage().set(page)
                         },
@@ -266,8 +273,10 @@ fun MoreSheet(
                                 modifier = Modifier
                                     .matchParentSize()
                                     .combinedClickable(
-                                        onClick = { button.execute() },
-                                        onLongClick = { button.executeLongPress() },
+                                        // ANZ -->
+                                        onClick = { mpv?.let { button.execute(it) } },
+                                        onLongClick = { mpv?.let { button.executeLongPress(it) } },
+                                        // ANZ <--
                                         interactionSource = inputChipInteractionSource,
                                         indication = null,
                                     ),
@@ -289,12 +298,14 @@ fun MoreSheet(
                         selected = audioChannels == it,
                         onClick = {
                             audioPreferences.audioChannels().set(it)
+                            // ANZ -->
                             if (it == AudioChannels.ReverseStereo) {
-                                MPVLib.setPropertyString(AudioChannels.AutoSafe.property, AudioChannels.AutoSafe.value)
+                                mpv?.setPropertyString(AudioChannels.AutoSafe.property, AudioChannels.AutoSafe.value)
                             } else {
-                                MPVLib.setPropertyString(AudioChannels.ReverseStereo.property, "")
+                                mpv?.setPropertyString(AudioChannels.ReverseStereo.property, "")
                             }
-                            MPVLib.setPropertyString(it.property, it.value)
+                            mpv?.setPropertyString(it.property, it.value)
+                            // ANZ <--
                         },
                         label = { Text(text = stringResource(it.titleRes)) },
                     )

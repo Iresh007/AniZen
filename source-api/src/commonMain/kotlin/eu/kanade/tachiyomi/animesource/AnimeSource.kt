@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.animesource
 
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimeRelation
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SAnimeEpisodeUpdate
@@ -27,6 +29,52 @@ interface AnimeSource {
 
     val lang: String
         get() = ""
+
+    // ANZ -->
+    /**
+     * Whether the source has support for latest updates.
+     *
+     * @since extensions-lib 17
+     */
+    val supportsLatest: Boolean
+        get() = (this as? AnimeCatalogueSource)?.supportsLatest ?: false
+
+    /**
+     * Returns the list of filters for the source.
+     *
+     * @since extensions-lib 17
+     */
+    fun getFilterList(): AnimeFilterList = (this as? AnimeCatalogueSource)?.getFilterList() ?: AnimeFilterList()
+
+    /**
+     * Get a page with a list of anime.
+     *
+     * @since extensions-lib 17
+     * @param page the page number to retrieve.
+     */
+    suspend fun getPopularAnime(page: Int): AnimesPage =
+        (this as? AnimeCatalogueSource)?.getPopularAnime(page) ?: throw UnsupportedOperationException()
+
+    /**
+     * Get a page with a list of latest anime updates.
+     *
+     * @since extensions-lib 17
+     * @param page the page number to retrieve.
+     */
+    suspend fun getLatestUpdates(page: Int): AnimesPage =
+        (this as? AnimeCatalogueSource)?.getLatestUpdates(page) ?: throw UnsupportedOperationException()
+
+    /**
+     * Get a page with a list of anime.
+     *
+     * @since extensions-lib 17
+     * @param page the page number to retrieve.
+     * @param query the search query.
+     * @param filters the list of filters to apply.
+     */
+    suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage =
+        (this as? AnimeCatalogueSource)?.getSearchAnime(page, query, filters) ?: throw UnsupportedOperationException()
+    // ANZ <--
 
     /**
      * Fetches updated information for an anime.

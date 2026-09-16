@@ -65,7 +65,6 @@ import eu.kanade.tachiyomi.ui.player.controls.components.AutoPlaySwitch
 import eu.kanade.tachiyomi.ui.player.controls.components.ControlsButton
 import eu.kanade.tachiyomi.ui.player.controls.components.CurrentChapter
 import eu.kanade.tachiyomi.ui.player.getIcon
-import `is`.xyz.mpv.MPVLib
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -179,7 +178,9 @@ fun RenderPlayerButton(
                 text = stringResource(MR.strings.player_speed, playbackSpeed),
                 onClick = {
                     val newSpeed = if (playbackSpeed >= 2) 0.25f else playbackSpeed + 0.25f
-                    MPVLib.setPropertyDouble("speed", newSpeed.toDouble())
+                    // ANZ -->
+                    viewModel.mpv.setPropertyDouble("speed", newSpeed.toDouble())
+                    // ANZ <--
                     viewModel.playerPreferences.playerSpeed().set(newSpeed)
                 },
                 onLongClick = { viewModel.showSheet(Sheets.PlaybackSpeed) },
