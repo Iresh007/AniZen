@@ -25,6 +25,9 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.AndroidSourceManager
 import eu.kanade.tachiyomi.ui.player.ExternalIntents
 import eu.kanade.tachiyomi.ui.player.utils.Anime4KManager
+import animiru.feature.mpvfiles.MpvConfig
+import eu.kanade.tachiyomi.ui.player.domain.AudioManager
+import eu.kanade.tachiyomi.ui.player.domain.BrightnessManager
 import eu.kanade.tachiyomi.util.system.isDebugBuildType
 import eu.kanade.tachiyomi.data.ai.AiManager
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
@@ -175,5 +178,11 @@ class AppModule(val app: Application) : InjektModule {
         }
 
         addSingletonFactory { GoogleDriveService(app) }
+
+        // ANZ -->
+        addSingletonFactory { MpvConfig(app, get(), get(), get()) }
+        addSingletonFactory { AudioManager(app) }
+        addSingletonFactory { BrightnessManager(app) }
+        // ANZ <--
     }
 }

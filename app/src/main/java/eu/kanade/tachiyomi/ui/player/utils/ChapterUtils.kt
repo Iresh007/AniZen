@@ -10,6 +10,9 @@ import kotlin.math.abs
 
 class ChapterUtils {
     companion object {
+        // ANZ -->
+        const val ANIYOMI_CHAPTER_IDENTIFIER = ";aniyomi="
+        // ANZ <--
         fun ChapterType.getStringRes(): StringResource? = when (this) {
             ChapterType.Opening -> MR.strings.player_chapter_type_opening
             ChapterType.Ending -> MR.strings.player_chapter_type_ending
@@ -32,7 +35,9 @@ class ChapterUtils {
                 }
                 val startChapter = IndexedSegment(
                     index = -2, // Index -2 is used to indicate that this is an external chapter
-                    name = it.name,
+                    // ANZ -->
+                    name = it.name + ANIYOMI_CHAPTER_IDENTIFIER + it.type.ordinal,
+                    // ANZ <--
                     start = startTime.toFloat(),
                     color = if (it.type == ChapterType.Other) Color.Unspecified else Color(0xFFD8BBDF),
                     chapterType = it.type,
