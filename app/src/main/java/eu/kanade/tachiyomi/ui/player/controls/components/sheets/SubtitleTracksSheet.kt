@@ -24,10 +24,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,22 +36,23 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import eu.kanade.tachiyomi.ui.player.PlayerViewModel.VideoTrack
+import androidx.compose.ui.unit.dp
+import eu.kanade.tachiyomi.ui.player.TrackState
+import eu.kanade.tachiyomi.ui.player.VideoTrack
+import kotlinx.collections.immutable.ImmutableList
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 
+// ANZ -->
 @Composable
 fun SubtitlesSheet(
-    tracks: List<VideoTrack>,
-    selectedTracks: List<Int>,
+    tracks: ImmutableList<VideoTrack>,
     onSelect: (VideoTrack) -> Unit,
     onAddSubtitle: () -> Unit,
     onOpenSubtitleSettings: () -> Unit,
@@ -91,17 +93,9 @@ fun SubtitlesSheet(
             )
         },
         track = { track ->
-            val selectedIndex = when (track) {
-                is VideoTrack.Internal -> selectedTracks.indexOf(track.id)
-                is VideoTrack.External -> track.mpvId?.let { selectedTracks.indexOf(it) } ?: -1
-            }
-            val isLoading = track is VideoTrack.External && track.isLoading
-            val isFailed = track is VideoTrack.External && track.isFailed
             SubtitleTrackRow(
-                title = getTrackTitle(track),
-                selected = selectedIndex,
-                isLoading = isLoading,
-                isFailed = isFailed,
+                track = track,
+                selected = track.selection,
                 onClick = { onSelect(track) },
             )
         },
@@ -123,12 +117,10 @@ fun SubtitlesSheet(
 
 @Composable
 fun SubtitleTrackRow(
-    title: String,
+    track: VideoTrack,
     selected: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    isLoading: Boolean = false,
-    isFailed: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -142,20 +134,15 @@ fun SubtitleTrackRow(
             onCheckedChange = { _ -> onClick() },
         )
         Text(
-            text = title,
+            text = getTrackTitle(track),
             fontStyle = if (selected > -1) FontStyle.Italic else FontStyle.Normal,
             fontWeight = if (selected > -1) FontWeight.ExtraBold else FontWeight.Normal,
         )
         Spacer(modifier = Modifier.weight(1f))
-        if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-        } else if (isFailed) {
-            Icon(
-                imageVector = Icons.Default.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(24.dp),
-            )
+        if (track is VideoTrack.External && track.state == TrackState.Loading) {
+            CircularProgressIndicator(modifier = Modifier.then(Modifier.size(24.dp)))
+        } else if (track is VideoTrack.External && track.state == TrackState.Error) {
+            Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
         } else if (selected != -1) {
             Text(
                 text = "#${selected + 1}",
@@ -165,3 +152,4 @@ fun SubtitleTrackRow(
         }
     }
 }
+// ANZ <--

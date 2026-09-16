@@ -22,6 +22,8 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
+import eu.kanade.tachiyomi.ui.player.PlayerViewModel
+import tachiyomi.i18n.MR
 
 /**
  * Loader used to retrieve the hosters for a given episode.
@@ -50,7 +52,12 @@ class EpisodeLoader {
                 isDownloaded -> getHostersOnDownloaded(episode, anime, source)
                 source is AnimeHttpSource -> getHostersOnHttp(episode, source)
                 source is LocalAnimeSource -> getHostersOnLocal(episode)
-                else -> error("source not supported")
+                // ANZ -->
+                else -> throw PlayerViewModel.ExceptionWithStringResource(
+                    "Source not supported: ${source.name}",
+                    MR.strings.source_unsupported,
+                )
+                // ANZ <--
             }
         }
 
@@ -170,7 +177,12 @@ class EpisodeLoader {
                 hoster.videoList != null && source is AnimeHttpSource -> hoster.videoList!!.parseVideoUrls(source)
                 hoster.videoList != null -> hoster.videoList!!
                 source is AnimeHttpSource -> getVideosOnHttp(source, hoster)
-                else -> error("source not supported")
+                // ANZ -->
+                else -> throw PlayerViewModel.ExceptionWithStringResource(
+                    "Source not supported: ${source.name}",
+                    MR.strings.source_unsupported,
+                )
+                // ANZ <--
             }
 
             val sortedVideos = if (source is AnimeHttpSource) {

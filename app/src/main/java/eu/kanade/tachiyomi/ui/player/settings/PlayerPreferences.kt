@@ -78,6 +78,11 @@ class PlayerPreferences(
     // Filler skip
     
     fun skipFillerEpisodes() = preferenceStore.getBoolean("pref_skip_filler_episodes", false)
+    // ANZ -->
+    fun folderPerAnime() = preferenceStore.getBoolean("create_folder_per_anime", false)
+    fun skipSeen() = preferenceStore.getBoolean("skip_seen", false)
+    fun skipFiltered() = preferenceStore.getBoolean("skip_filtered", true)
+    // ANZ <--
 
     // PiP
 

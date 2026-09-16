@@ -29,26 +29,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.player.components.PlayerSheet
-import eu.kanade.tachiyomi.ui.player.PlayerViewModel.VideoTrack
+import eu.kanade.tachiyomi.ui.player.VideoTrack
+import kotlinx.collections.immutable.ImmutableList
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 
+// ANZ -->
 @Composable
 fun <T> GenericTracksSheet(
-    tracks: List<T>,
+    tracks: ImmutableList<T>,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     dismissEvent: Boolean = false,
@@ -60,13 +60,10 @@ fun <T> GenericTracksSheet(
         Column(modifier) {
             header()
             LazyColumn {
-                itemsIndexed(
-                    items = tracks,
-                    key = { index, _ -> "track-$index" }
-                ) { _, it ->
+                items(tracks) {
                     track(it)
                 }
-                item(key = "footer") {
+                item {
                     footer()
                 }
             }
@@ -110,32 +107,33 @@ fun AddTrackRow(
 }
 
 @Composable
-fun getTrackTitle(track: VideoTrack): String {
-    return when (track) {
+fun getTrackTitle(videoTrack: VideoTrack): String {
+    return when (videoTrack) {
+        is VideoTrack.External -> videoTrack.title
         is VideoTrack.Internal -> {
+            val track = videoTrack.data
+
+            val hasTitle = !track.title.isNullOrBlank()
+            val hasLang = !track.lang.isNullOrBlank()
+
             when {
-                track.id == -1 -> track.name
-                track.language.isNullOrBlank() && track.name.isNotBlank() -> stringResource(MR.strings.player_sheets_track_title_wo_lang, track.id, track.name)
-                !track.language.isNullOrBlank() && track.name.isNotBlank() -> {
-                    if (track.name.contains(track.language, ignoreCase = true) || 
-                        track.language.contains(track.name, ignoreCase = true)) {
-                        stringResource(MR.strings.player_sheets_track_title_wo_lang, track.id, track.name)
-                    } else {
-                        stringResource(MR.strings.player_sheets_track_title_w_lang, track.id, track.name, track.language)
-                    }
-                }
-                !track.language.isNullOrBlank() && track.name.isBlank() -> stringResource(MR.strings.player_sheets_track_lang_wo_title, track.id, track.language)
-                else -> track.name
-            }
-        }
-        is VideoTrack.External -> {
-            val name = track.name
-            val lang = track.language
-            when {
-                lang.isNullOrBlank() -> name
-                name.isBlank() -> lang
-                name.contains(lang, ignoreCase = true) || lang.contains(name, ignoreCase = true) -> name
-                else -> "$name ($lang)"
+                hasTitle && hasLang -> stringResource(
+                    MR.strings.player_sheets_track_title_w_lang,
+                    track.id,
+                    track.title,
+                    track.lang,
+                )
+                hasTitle && !hasLang -> stringResource(
+                    MR.strings.player_sheets_track_title_wo_lang,
+                    track.id,
+                    track.title,
+                )
+                !hasTitle && hasLang -> stringResource(
+                    MR.strings.player_sheets_track_lang_wo_title,
+                    track.id,
+                    track.lang,
+                )
+                else -> track.id.toString()
             }
         }
     }
@@ -170,3 +168,4 @@ fun TrackSheetTitle(
         }
     }
 }
+// ANZ <--
