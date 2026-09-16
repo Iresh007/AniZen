@@ -424,11 +424,6 @@ androidComponents {
     }
 }
 
-// ANZ -->
-aboutLibraries {
-    offlineMode = true
-}
-// ANZ <--
 
 buildscript {
     dependencies {
