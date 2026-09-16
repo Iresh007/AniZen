@@ -2428,7 +2428,7 @@ class PlayerViewModel @JvmOverloads constructor(
         viewModelScope.launchNonCancellable {
             val result = try {
                 anime.editCover(Injekt.get(), imageStream())
-                if (currentSource.value?.isLocal() == true || anime.favorite) {
+                if (anime.isLocal() || anime.favorite) {
                     SetAsCover.Success
                 } else {
                     SetAsCover.AddToLibraryFirst
