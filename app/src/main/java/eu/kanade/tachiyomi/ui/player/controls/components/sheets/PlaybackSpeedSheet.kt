@@ -43,12 +43,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.player.components.PlayerSheet
 import eu.kanade.presentation.player.components.SliderItem
 import eu.kanade.presentation.player.components.SwitchPreference
+import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
-import `is`.xyz.mpv.MPVLib
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -197,11 +198,15 @@ fun PlaybackSpeedSheet(
                 }
             }
 
+            val activity = LocalContext.current as? PlayerActivity
+            val mpv = activity?.viewModel?.mpv
             SwitchPreference(
                 value = pitchCorrection,
                 onValueChange = {
                     audioPreferences.enablePitchCorrection().set(it)
-                    MPVLib.setPropertyBoolean("audio-pitch-correction", it)
+                    // ANZ -->
+                    mpv?.setPropertyBoolean("audio-pitch-correction", it)
+                    // ANZ <--
                 },
                 content = {
                     Column(

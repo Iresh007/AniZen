@@ -97,7 +97,8 @@ import eu.kanade.tachiyomi.ui.player.utils.ChapterUtils.Companion.getStringRes
 import eu.kanade.tachiyomi.util.system.powerManager
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
-import `is`.xyz.mpv.MPVLib
+import `is`.xyz.mpv.MPV
+import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
@@ -134,6 +135,9 @@ import uy.kohesive.injekt.injectLazy
 
 class PlayerActivity : BaseActivity() {
     internal val viewModel by viewModels<PlayerViewModel>(factoryProducer = { PlayerViewModelProviderFactory(this) })
+    // ANZ -->
+    private val mpv by lazy { viewModel.mpv }
+    // ANZ <--
     private val downloadManager: DownloadManager by injectLazy()
     private val downloadProvider: DownloadProvider by injectLazy()
     private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
@@ -399,10 +403,11 @@ class PlayerActivity : BaseActivity() {
             noisyReceiver.initialized = false
         }
 
-        MPVLib.removeLogObserver(playerObserver)
-        MPVLib.removeObserver(playerObserver)
+        // ANZ -->
+        mpv.removeLogObserver(playerObserver)
+        mpv.removeObserver(playerObserver)
         player.initialized = false
-        player.destroy()
+        // ANZ <--
         castManager.cleanup()
 
         // AM (DISCORD) -->
@@ -421,7 +426,9 @@ class PlayerActivity : BaseActivity() {
 
         player.isExiting = true
         if (isFinishing) {
-            MPVLib.command(arrayOf("stop"))
+            // ANZ -->
+            mpv.command("stop")
+            // ANZ <--
         } else {
             viewModel.pause()
         }
@@ -511,7 +518,9 @@ class PlayerActivity : BaseActivity() {
 
     private fun executeMPVCommand(commands: Array<String>) {
         if (!player.isExiting) {
-            MPVLib.command(commands)
+            // ANZ -->
+            mpv.command(*commands)
+            // ANZ <--
         }
     }
 
@@ -537,16 +546,14 @@ class PlayerActivity : BaseActivity() {
             }
         }
 
-        player.initialize(
-            configDir = configDir,
-            cacheDir = applicationContext.cacheDir.path,
-            logLvl = logLevel,
-        )
-        MPVLib.setOptionString("sub-ass-force-margins", "yes")
-        MPVLib.setOptionString("sub-use-margins", "yes")
-        MPVLib.setOptionString("idle", "yes")
-        MPVLib.addLogObserver(playerObserver)
-        MPVLib.addObserver(playerObserver)
+        // ANZ -->
+        player.init(mpv)
+        mpv.setOptionString("sub-ass-force-margins", "yes")
+        mpv.setOptionString("sub-use-margins", "yes")
+        mpv.setOptionString("idle", "yes")
+        mpv.addLogObserver(playerObserver)
+        mpv.addObserver(playerObserver)
+        // ANZ <--
     }
 
     private fun ensureBridgeScript() {
@@ -648,14 +655,16 @@ class PlayerActivity : BaseActivity() {
                     }
                 }
             }
-            MPVLib.setPropertyString(
+            // ANZ -->
+            mpv.setPropertyString(
                 "sub-fonts-dir",
                 applicationContext.filesDir.path,
             )
-            MPVLib.setPropertyString(
+            mpv.setPropertyString(
                 "osd-fonts-dir",
                 applicationContext.filesDir.path,
             )
+            // ANZ <--
         }
     }
 
@@ -701,7 +710,9 @@ class PlayerActivity : BaseActivity() {
             val file = File(scriptsDir, "custombuttons.lua")
             try {
                 file.writeText(customButtonsContent)
-                MPVLib.command(arrayOf("load-script", file.absolutePath))
+                // ANZ -->
+                mpv.command("load-script", file.absolutePath)
+                // ANZ <--
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR, e) { "Failed to write or load custombuttons.lua" }
             }
@@ -710,7 +721,9 @@ class PlayerActivity : BaseActivity() {
 
     private fun setupPlayerAudio() {
         with(audioPreferences) {
-            audioChannels().get().let { MPVLib.setPropertyString(it.property, it.value) }
+            // ANZ -->
+            audioChannels().get().let { mpv.setPropertyString(it.property, it.value) }
+            // ANZ <--
 
             val request = AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).also {
                 it.setAudioAttributes(
@@ -741,10 +754,12 @@ class PlayerActivity : BaseActivity() {
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                MPVLib.command(arrayOf("multiply", "volume", "0.5"))
+                // ANZ -->
+                mpv.command("multiply", "volume", "0.5")
                 restoreAudioFocus = {
-                    MPVLib.command(arrayOf("multiply", "volume", "2"))
+                    mpv.command("multiply", "volume", "2")
                 }
+                // ANZ <--
             }
 
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -959,20 +974,36 @@ class PlayerActivity : BaseActivity() {
         }
     }
 
-    internal fun event(eventId: Int) {
+    // ANZ -->
+    internal fun onObserverEvent(property: String, value: MPVNode) {
+    }
+
+    internal fun event(eventId: Int, node: MPVNode) {
         if (player.isExiting) return
         when (eventId) {
-            MPVLib.mpvEventId.MPV_EVENT_FILE_LOADED -> {
+            MPV.mpvEvent.MPV_EVENT_FILE_LOADED -> {
                 PlayerStats.isAdaptiveDowngraded.value = false
                 viewModel.viewModelScope.launchIO { fileLoaded() }
             }
-            MPVLib.mpvEventId.MPV_EVENT_SEEK -> viewModel.isLoading.update { true }
-            MPVLib.mpvEventId.MPV_EVENT_PLAYBACK_RESTART -> {
+            MPV.mpvEvent.MPV_EVENT_SEEK -> viewModel.isLoading.update { true }
+            MPV.mpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
                 player.isExiting = false
                 viewModel.restoreAspectRatio()
             }
+            MPV.mpvEvent.MPV_EVENT_END_FILE -> {
+                val errorNode = node.asMap()?.get("file_error") ?: return
+                var errorMessage = errorNode.asString() ?: return
+
+                val httpError = playerObserver.httpError
+                if (!httpError.isNullOrEmpty()) {
+                    errorMessage += ": $httpError"
+                    playerObserver.httpError = null
+                }
+                onVideoError(errorMessage)
+            }
         }
     }
+    // ANZ <--
 
     fun createPipParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
@@ -1215,7 +1246,9 @@ class PlayerActivity : BaseActivity() {
                                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             }
                             SingleActionGesture.Custom -> {
-                                MPVLib.command(arrayOf("keypress", CustomKeyCodes.MediaPlay.keyCode))
+                                // ANZ -->
+                                mpv.command("keypress", CustomKeyCodes.MediaPlay.keyCode)
+                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> {}
@@ -1244,7 +1277,9 @@ class PlayerActivity : BaseActivity() {
                                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             }
                             SingleActionGesture.Custom -> {
-                                MPVLib.command(arrayOf("keypress", CustomKeyCodes.MediaPlay.keyCode))
+                                // ANZ -->
+                                mpv.command("keypress", CustomKeyCodes.MediaPlay.keyCode)
+                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> {}
@@ -1261,7 +1296,9 @@ class PlayerActivity : BaseActivity() {
                                 viewModel.pauseUnpause()
                             }
                             SingleActionGesture.Custom -> {
-                                MPVLib.command(arrayOf("keypress", CustomKeyCodes.MediaPrevious.keyCode))
+                                // ANZ -->
+                                mpv.command("keypress", CustomKeyCodes.MediaPrevious.keyCode)
+                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> viewModel.changeEpisode(true)
@@ -1278,7 +1315,9 @@ class PlayerActivity : BaseActivity() {
                                 viewModel.pauseUnpause()
                             }
                             SingleActionGesture.Custom -> {
-                                MPVLib.command(arrayOf("keypress", CustomKeyCodes.MediaNext.keyCode))
+                                // ANZ -->
+                                mpv.command("keypress", CustomKeyCodes.MediaNext.keyCode)
+                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> viewModel.changeEpisode(false)
@@ -1422,7 +1461,9 @@ class PlayerActivity : BaseActivity() {
         // Set mime-type for TV or if provided
         val mime = video.mimeType ?: if (isTv) "video/mp4" else null
         mime?.let {
-            MPVLib.setOptionString("android-mime-type", it)
+            // ANZ -->
+            mpv.setOptionString("android-mime-type", it)
+            // ANZ <--
         }
 
         if (viewModel.isLoadingEpisode.value) {
@@ -1434,11 +1475,15 @@ class PlayerActivity : BaseActivity() {
                     } else {
                         episode.last_second_seen
                     }
-                MPVLib.command(arrayOf("set", "start", "${resumePosition / 1000F}"))
+                // ANZ -->
+                mpv.command("set", "start", "${resumePosition / 1000F}")
+                // ANZ <--
             }
         } else {
             player.timePos?.let {
-                MPVLib.command(arrayOf("set", "start", "${player.timePos}"))
+                // ANZ -->
+                mpv.command("set", "start", "${player.timePos}")
+                // ANZ <--
             }
         }
         httpServer?.stop()
@@ -1477,12 +1522,16 @@ class PlayerActivity : BaseActivity() {
                 if (!externalAudio.isNullOrBlank()) {
                     val parsedAudioUrl = parseVideoUrl(externalAudio)
                     if (!parsedAudioUrl.isNullOrBlank()) {
-                        MPVLib.setOptionString("audio-file", parsedAudioUrl)
+                        // ANZ -->
+                        mpv.setOptionString("audio-file", parsedAudioUrl)
+                        // ANZ <--
                         logcat { "Player: Mounted atomic audio-file at loadfile time: $parsedAudioUrl" }
                     }
                 }
 
-                MPVLib.command(arrayOf("loadfile", parseVideoUrl(videoUrl) ?: videoUrl))
+                // ANZ -->
+                mpv.command("loadfile", parseVideoUrl(videoUrl) ?: videoUrl)
+                // ANZ <--
             }
         }
         updateDiscordRPC(exitingPlayer = false)
@@ -1496,7 +1545,9 @@ class PlayerActivity : BaseActivity() {
             val videoInputStream = applicationContext.contentResolver.openInputStream(Uri.parse(videoUrl))
             val torrent = TorrentServerApi.uploadTorrent(videoInputStream!!, quality, "", "", false)
             val torrentUrl = TorrentServerUtils.getTorrentPlayLink(torrent, 0)
-            MPVLib.command(arrayOf("loadfile", torrentUrl))
+            // ANZ -->
+            mpv.command("loadfile", torrentUrl)
+            // ANZ <--
             return
         }
 
@@ -1513,7 +1564,9 @@ class PlayerActivity : BaseActivity() {
 
         val currentTorrent = TorrentServerApi.addTorrent(videoUrl, quality, "", "", false)
         val videoTorrentUrl = TorrentServerUtils.getTorrentPlayLink(currentTorrent, index)
-        MPVLib.command(arrayOf("loadfile", videoTorrentUrl))
+        // ANZ -->
+        mpv.command("loadfile", videoTorrentUrl)
+        // ANZ <--
     }
 
     /**
@@ -1559,12 +1612,14 @@ class PlayerActivity : BaseActivity() {
             it.key + ": " + it.value.replace(",", "\\,")
         }.joinToString(",")
 
-        MPVLib.setOptionString("http-header-fields", httpHeaderString)
+        // ANZ -->
+        mpv.setOptionString("http-header-fields", httpHeaderString)
         // Also set the global user-agent for this specific video request to be safe,
         // as some MPV versions prioritize it over the fields string.
         headers["User-Agent"]?.let {
-            MPVLib.setOptionString("user-agent", it)
+            mpv.setOptionString("user-agent", it)
         }
+        // ANZ <--
     }
 
     /**
@@ -1616,7 +1671,7 @@ class PlayerActivity : BaseActivity() {
     // at java.lang.Object java.util.ArrayList$Itr.next() (ArrayList.java:860)
     // at void eu.kanade.tachiyomi.ui.player.PlayerActivity.fileLoaded() (PlayerActivity.kt:1874)
     // at void eu.kanade.tachiyomi.ui.player.PlayerActivity.event(int) (PlayerActivity.kt:1566)
-    // at void is.xyz.mpv.MPVLib.event(int) (MPVLib.java:86)
+    // at void is.xyz.mpv.MPV.event(int, MPVNode)
     private fun fileLoaded() {
         if (player.isExiting) return
         setMpvMediaTitle()
@@ -1685,7 +1740,9 @@ class PlayerActivity : BaseActivity() {
         val episode = viewModel.currentEpisode.value ?: return
 
         // Write to mpv table
-        MPVLib.setPropertyString("user-data/current-anime/episode-title", episode.name)
+        // ANZ -->
+        mpv.setPropertyString("user-data/current-anime/episode-title", episode.name)
+        // ANZ <--
 
         val epNumber = episode.episode_number.let { number ->
             if (ceil(number) == floor(number)) number.toInt() else number
@@ -1698,7 +1755,9 @@ class PlayerActivity : BaseActivity() {
             episode.name,
         )
 
-        MPVLib.setPropertyString("force-media-title", title)
+        // ANZ -->
+        mpv.setPropertyString("force-media-title", title)
+        // ANZ <--
     }
 
     private fun endFile(eofReached: Boolean) {

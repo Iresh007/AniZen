@@ -57,12 +57,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.compose.ui.platform.LocalContext
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.player.components.OutlinedNumericChooser
+import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.controls.CARDS_MAX_WIDTH
 import eu.kanade.tachiyomi.ui.player.controls.panelCardsColors
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
-import `is`.xyz.mpv.MPVLib
 import kotlinx.coroutines.delay
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
@@ -91,34 +92,39 @@ fun SubtitleDelayPanel(
     ) {
         val delayControlCard = createRef()
 
+        // ANZ -->
+        val activity = LocalContext.current as? PlayerActivity
+        val mpv = activity?.viewModel?.mpv
+
         var affectedSubtitle by remember { mutableStateOf(SubtitleDelayType.Primary) }
-        var delay by remember { mutableIntStateOf((MPVLib.getPropertyDouble("sub-delay") * 1000).roundToInt()) }
+        var delay by remember { mutableIntStateOf(((mpv?.getPropertyDouble("sub-delay") ?: 0.0) * 1000).roundToInt()) }
         var secondaryDelay by remember {
-            mutableIntStateOf((MPVLib.getPropertyDouble("secondary-sub-delay") * 1000).roundToInt())
+            mutableIntStateOf(((mpv?.getPropertyDouble("secondary-sub-delay") ?: 0.0) * 1000).roundToInt())
         }
-        var speed by remember { mutableFloatStateOf(MPVLib.getPropertyDouble("sub-speed").toFloat()) }
+        var speed by remember { mutableFloatStateOf(mpv?.getPropertyDouble("sub-speed")?.toFloat() ?: 1f) }
         LaunchedEffect(speed) {
-            if (speed in 0.1f..1f) MPVLib.setPropertyDouble("sub-speed", speed.toDouble())
+            if (speed in 0.1f..1f) mpv?.setPropertyDouble("sub-speed", speed.toDouble())
         }
         LaunchedEffect(delay, secondaryDelay) {
             val finalDelay = (if (affectedSubtitle == SubtitleDelayType.Secondary) secondaryDelay else delay) / 1000.0
             when (affectedSubtitle) {
-                SubtitleDelayType.Primary -> MPVLib.setPropertyDouble("sub-delay", finalDelay)
-                SubtitleDelayType.Secondary -> MPVLib.setPropertyDouble("secondary-sub-delay", finalDelay)
+                SubtitleDelayType.Primary -> mpv?.setPropertyDouble("sub-delay", finalDelay)
+                SubtitleDelayType.Secondary -> mpv?.setPropertyDouble("secondary-sub-delay", finalDelay)
                 else -> {
-                    MPVLib.setPropertyDouble("sub-delay", finalDelay)
-                    MPVLib.setPropertyDouble("secondary-sub-delay", finalDelay)
+                    mpv?.setPropertyDouble("sub-delay", finalDelay)
+                    mpv?.setPropertyDouble("secondary-sub-delay", finalDelay)
                 }
             }
         }
         LaunchedEffect(affectedSubtitle) {
             secondaryDelay = (
-                MPVLib.getPropertyDouble(
+                (mpv?.getPropertyDouble(
                     if (affectedSubtitle == SubtitleDelayType.Both) "sub-delay" else "secondary-sub-delay",
-                ) * 1000
+                ) ?: 0.0) * 1000
                 ).toInt()
-            delay = (MPVLib.getPropertyDouble("sub-delay") * 1000).toInt()
+            delay = ((mpv?.getPropertyDouble("sub-delay") ?: 0.0) * 1000).toInt()
         }
+        // ANZ <--
         SubtitleDelayCard(
             delay = if (affectedSubtitle == SubtitleDelayType.Secondary) secondaryDelay else delay,
             onDelayChange = {

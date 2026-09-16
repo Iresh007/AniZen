@@ -91,8 +91,11 @@ import eu.kanade.tachiyomi.util.storage.DiskUtil
 import eu.kanade.tachiyomi.util.storage.cacheImageDir
 import eu.kanade.tachiyomi.util.system.isConnectedToWifi
 import eu.kanade.tachiyomi.util.system.toast
-import `is`.xyz.mpv.MPVLib
+import android.os.Build
+import android.os.Environment
+import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.Utils
+import tachiyomi.domain.storage.service.StorageManager
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -360,6 +363,22 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val cachePath: String = activity.cacheDir.path
 
+    // ANZ -->
+    private val storageManager: StorageManager = Injekt.get()
+    val mpv = MPV(activity.applicationContext) {
+        val configDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+            storageManager.getMPVConfigDirectory()?.filePath ?: activity.applicationContext.filesDir.path
+        } else {
+            activity.applicationContext.filesDir.path
+        }
+        it.setOptionString("config", "yes")
+        it.setOptionString("config-dir", configDir)
+        it.setOptionString("gpu-shader-cache-dir", cachePath)
+        it.setOptionString("icc-cache-dir", cachePath)
+        it.setOptionString("keep-open", "yes")
+    }
+    // ANZ <--
+
     private val _customButtons = MutableStateFlow<CustomButtonFetchState>(CustomButtonFetchState.Loading)
     val customButtons = _customButtons.asStateFlow()
 
@@ -448,32 +467,42 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun updateDecoder(decoder: Decoder) {
-        MPVLib.setPropertyString("hwdec", decoder.value)
+        // ANZ -->
+        mpv.setPropertyString("hwdec", decoder.value)
+        // ANZ <--
     }
 
     val getTrackLanguage: (Int) -> String = {
         if (it != -1) {
-            MPVLib.getPropertyString("track-list/$it/lang") ?: ""
+            // ANZ -->
+            mpv.getPropertyString("track-list/$it/lang") ?: ""
+            // ANZ <--
         } else {
             activity.stringResource(MR.strings.off)
         }
     }
     val getTrackTitle: (Int) -> String = {
         if (it != -1) {
-            MPVLib.getPropertyString("track-list/$it/title") ?: ""
+            // ANZ -->
+            mpv.getPropertyString("track-list/$it/title") ?: ""
+            // ANZ <--
         } else {
             activity.stringResource(MR.strings.off)
         }
     }
     val getTrackMPVId: (Int) -> Int? = {
         if (it != -1) {
-            MPVLib.getPropertyInt("track-list/$it/id")
+            // ANZ -->
+            mpv.getPropertyInt("track-list/$it/id")
+            // ANZ <--
         } else {
             -1
         }
     }
     val getTrackType: (Int) -> String? = {
-        MPVLib.getPropertyString("track-list/$it/type")
+        // ANZ -->
+        mpv.getPropertyString("track-list/$it/type")
+        // ANZ <--
     }
 
     fun clearTracks() {
@@ -491,7 +520,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 VideoTrack.Internal(-1, activity.stringResource(MR.strings.off), null),
             )
             try {
-                val tracksCount = MPVLib.getPropertyInt("track-list/count") ?: 0
+                // ANZ -->
+                val tracksCount = mpv.getPropertyInt("track-list/count") ?: 0
+                // ANZ <--
                 // Collect all MPV track names and IDs — Animiru matches externals by URL stored as name
                 val mpvSubNameToId = mutableMapOf<String, Int>()
                 val mpvAudioNameToId = mutableMapOf<String, Int>()
@@ -692,10 +723,12 @@ class PlayerViewModel @JvmOverloads constructor(
 
     fun loadChapters() {
         val chapters = mutableListOf<IndexedSegment>()
-        val count = MPVLib.getPropertyInt("chapter-list/count")!!
+        // ANZ -->
+        val count = mpv.getPropertyInt("chapter-list/count") ?: 0
         for (i in 0 until count) {
-            val title = MPVLib.getPropertyString("chapter-list/$i/title")
-            val time = MPVLib.getPropertyInt("chapter-list/$i/time")!!
+            val title = mpv.getPropertyString("chapter-list/$i/title")
+            val time = mpv.getPropertyInt("chapter-list/$i/time") ?: 0
+        // ANZ <--
             chapters.add(
                 IndexedSegment(
                     name = title,
@@ -729,7 +762,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 val cacheFile = copyUriToCache(uri)
                 if (cacheFile != null) {
                     withUIContext {
-                        MPVLib.command(arrayOf("audio-add", cacheFile.absolutePath, "select", cacheFile.name))
+                        // ANZ -->
+                        mpv.command("audio-add", cacheFile.absolutePath, "select", cacheFile.name)
+                        // ANZ <--
                     }
                 } else {
                     logcat(LogPriority.ERROR) { "Failed to copy audio to cache" }
@@ -738,9 +773,13 @@ class PlayerViewModel @JvmOverloads constructor(
         } else {
             val name = uri.path?.let { File(it).name }
             if (name == null) {
-                MPVLib.command(arrayOf("audio-add", url, "select"))
+                // ANZ -->
+                mpv.command("audio-add", url, "select")
+                // ANZ <--
             } else {
-                MPVLib.command(arrayOf("audio-add", url, "select", name))
+                // ANZ -->
+                mpv.command("audio-add", url, "select", name)
+                // ANZ <--
             }
         }
     }
@@ -760,7 +799,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     }
                     // Use "select" like Animiru so MPV activates the track immediately after loading
                     // Pass URL as the title so loadTracks() can match it back by name
-                    MPVLib.command(arrayOf("audio-add", resolvedUrl, "select", resolvedUrl))
+                    // ANZ -->
+                    mpv.command("audio-add", resolvedUrl, "select", resolvedUrl)
+                    // ANZ <--
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR) { "Failed to resolve or add audio: ${e.message}" }
                     _audioTracks.update { list ->
@@ -807,7 +848,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 val cacheFile = copyUriToCache(uri)
                 if (cacheFile != null) {
                     withUIContext {
-                        MPVLib.command(arrayOf("sub-add", cacheFile.absolutePath, "select", cacheFile.name))
+                        // ANZ -->
+                        mpv.command("sub-add", cacheFile.absolutePath, "select", cacheFile.name)
+                        // ANZ <--
                     }
                 } else {
                     logcat(LogPriority.ERROR) { "Failed to copy subtitle to cache" }
@@ -816,9 +859,13 @@ class PlayerViewModel @JvmOverloads constructor(
         } else {
             val name = uri.path?.let { File(it).name }
             if (name == null) {
-                MPVLib.command(arrayOf("sub-add", url, "select"))
+                // ANZ -->
+                mpv.command("sub-add", url, "select")
+                // ANZ <--
             } else {
-                MPVLib.command(arrayOf("sub-add", url, "select", name))
+                // ANZ -->
+                mpv.command("sub-add", url, "select", name)
+                // ANZ <--
             }
         }
     }
@@ -838,7 +885,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     }
                     // Use "select" like Animiru so MPV activates the track immediately after loading
                     // Pass URL as the title so loadTracks() can match it back by name
-                    MPVLib.command(arrayOf("sub-add", resolvedUrl, "select", resolvedUrl))
+                    // ANZ -->
+                    mpv.command("sub-add", resolvedUrl, "select", resolvedUrl)
+                    // ANZ <--
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR) { "Failed to resolve or add subtitle: ${e.message}" }
                     _subtitleTracks.update { list ->
@@ -1133,7 +1182,9 @@ class PlayerViewModel @JvmOverloads constructor(
         pendingSeekTarget = target
         pendingSeekTimeMs = System.currentTimeMillis()
         _pos.update { target }
-        MPVLib.command(arrayOf("seek", offset.toString(), if (precise) "relative+exact" else "relative"))
+        // ANZ -->
+        mpv.command("seek", offset.toString(), if (precise) "relative+exact" else "relative")
+        // ANZ <--
     }
 
     fun seekTo(position: Int, precise: Boolean = true) {
@@ -1141,7 +1192,9 @@ class PlayerViewModel @JvmOverloads constructor(
         pendingSeekTarget = position.toFloat()
         pendingSeekTimeMs = System.currentTimeMillis()
         _pos.update { position.toFloat() }
-        MPVLib.command(arrayOf("seek", position.toString(), if (precise) "absolute" else "absolute+keyframes"))
+        // ANZ -->
+        mpv.command("seek", position.toString(), if (precise) "absolute" else "absolute+keyframes")
+        // ANZ <--
     }
 
     fun changeBrightnessTo(
@@ -1159,7 +1212,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val maxVolume = activity.audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
     fun changeVolumeBy(change: Int) {
-        val mpvVol = MPVLib.getPropertyInt("volume")
+        // ANZ -->
+        val mpvVol = mpv.getPropertyInt("volume") ?: 100
+        // ANZ <--
         val sysVol = currentVolume.value
 
         if (change > 0) { // Increasing
@@ -1211,7 +1266,9 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun changeMPVVolumeTo(volume: Int) {
-        MPVLib.setPropertyInt("volume", volume)
+        // ANZ -->
+        mpv.setPropertyInt("volume", volume)
+        // ANZ <--
     }
 
     fun setMPVVolume(volume: Int) {
@@ -1380,7 +1437,8 @@ class PlayerViewModel @JvmOverloads constructor(
                 val startInt = start.toDoubleOrNull()?.toInt() ?: 0
                 val stopInt = stop.toDoubleOrNull()?.toInt() ?: 0
                 val stepInt = step.toDoubleOrNull()?.toInt() ?: 1
-                val defaultValue = MPVLib.getPropertyInt(pickerProperty) ?: startInt
+                // ANZ -->
+                val defaultValue = mpv.getPropertyInt(pickerProperty) ?: startInt
                 showDialog(
                     Dialogs.IntegerPicker(
                         defaultValue = defaultValue,
@@ -1389,10 +1447,11 @@ class PlayerViewModel @JvmOverloads constructor(
                         step = stepInt,
                         nameFormat = nameFormat,
                         title = title,
-                        onChange = { MPVLib.setPropertyInt(pickerProperty, it) },
+                        onChange = { mpv.setPropertyInt(pickerProperty, it) },
                         onDismissRequest = { showDialog(Dialogs.None) },
                     ),
                 )
+                // ANZ <--
             }
             "pause" -> {
                 when (data) {
@@ -1438,7 +1497,9 @@ class PlayerViewModel @JvmOverloads constructor(
             }
         }
 
-        MPVLib.setPropertyString(property, "")
+        // ANZ -->
+        mpv.setPropertyString(property, "")
+        // ANZ <--
     }
 
     private operator fun <T> List<T>.component6(): T = get(5)
@@ -1517,7 +1578,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     private fun setPropertyDouble(property: String, value: Double) {
         if (activity.player.initialized) {
-            MPVLib.setPropertyDouble(property, value)
+            // ANZ -->
+            mpv.setPropertyDouble(property, value)
+            // ANZ <--
         }
     }
 
@@ -1576,7 +1639,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 pauseUnpause()
             }
             SingleActionGesture.Custom -> {
-                MPVLib.command(arrayOf("keypress", CustomKeyCodes.DoubleTapLeft.keyCode))
+                // ANZ -->
+                mpv.command("keypress", CustomKeyCodes.DoubleTapLeft.keyCode)
+                // ANZ <--
             }
             SingleActionGesture.None -> {}
             SingleActionGesture.Switch -> changeEpisode(true)
@@ -1589,7 +1654,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 pauseUnpause()
             }
             SingleActionGesture.Custom -> {
-                MPVLib.command(arrayOf("keypress", CustomKeyCodes.DoubleTapCenter.keyCode))
+                // ANZ -->
+                mpv.command("keypress", CustomKeyCodes.DoubleTapCenter.keyCode)
+                // ANZ <--
             }
             SingleActionGesture.Seek -> {}
             SingleActionGesture.None -> {}
@@ -1606,7 +1673,9 @@ class PlayerViewModel @JvmOverloads constructor(
                 pauseUnpause()
             }
             SingleActionGesture.Custom -> {
-                MPVLib.command(arrayOf("keypress", CustomKeyCodes.DoubleTapRight.keyCode))
+                // ANZ -->
+                mpv.command("keypress", CustomKeyCodes.DoubleTapRight.keyCode)
+                // ANZ <--
             }
             SingleActionGesture.None -> {}
             SingleActionGesture.Switch -> changeEpisode(false)
@@ -1621,6 +1690,9 @@ class PlayerViewModel @JvmOverloads constructor(
             }
         }
         deletePendingEpisodes()
+        // ANZ -->
+        mpv.close()
+        // ANZ <--
     }
 
     fun updateCastProgress(position: Float) {
@@ -1847,14 +1919,16 @@ class PlayerViewModel @JvmOverloads constructor(
                 _hasNextEpisode.update { _ -> getCurrentEpisodeIndex() != currentPlaylist.value.size - 1 }
 
                 // Write to mpv table
-                MPVLib.setPropertyString("user-data/current-anime/anime-title", anime.title)
-                MPVLib.setPropertyInt("user-data/current-anime/intro-length", getAnimeSkipIntroLength())
-                MPVLib.setPropertyString(
+                // ANZ -->
+                mpv.setPropertyString("user-data/current-anime/anime-title", anime.title)
+                mpv.setPropertyInt("user-data/current-anime/intro-length", getAnimeSkipIntroLength())
+                mpv.setPropertyString(
                     "user-data/current-anime/category",
                     getAnimeCategories.await(anime.id).joinToString {
                         it.name
                     },
                 )
+                // ANZ <--
 
                 val currentEp = currentEpisode.value
                     ?: throw ExceptionWithStringResource("No episode loaded", MR.strings.no_episode_loaded)
@@ -2854,7 +2928,9 @@ class PlayerViewModel @JvmOverloads constructor(
         val filename = cachePath + "/${System.currentTimeMillis()}_mpv_screenshot_tmp.png"
         val subtitleFlag = if (showSubtitles) "subtitles" else "video"
 
-        MPVLib.command(arrayOf("screenshot-to-file", filename, subtitleFlag))
+        // ANZ -->
+        mpv.command("screenshot-to-file", filename, subtitleFlag)
+        // ANZ <--
         val tempFile = File(filename).takeIf { it.exists() } ?: return null
         val newFile = File("$cachePath/mpv_screenshot.png")
 
@@ -3246,13 +3322,15 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 }
 
-fun CustomButton.execute() {
-    MPVLib.command(arrayOf("script-message", "call_button_$id"))
+// ANZ -->
+fun CustomButton.execute(mpv: MPV) {
+    mpv.command("script-message", "call_button_$id")
 }
 
-fun CustomButton.executeLongPress() {
-    MPVLib.command(arrayOf("script-message", "call_button_${id}_long"))
+fun CustomButton.executeLongPress(mpv: MPV) {
+    mpv.command("script-message", "call_button_${id}_long")
 }
+// ANZ <--
 
 fun Float.normalize(inMin: Float, inMax: Float, outMin: Float, outMax: Float): Float {
     return (this - inMin) * (outMax - outMin) / (inMax - inMin) + outMin

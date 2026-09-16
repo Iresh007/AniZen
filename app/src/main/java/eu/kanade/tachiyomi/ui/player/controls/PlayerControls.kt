@@ -92,7 +92,7 @@ import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
 import exh.log.InterpolationStatsOverlay
-import `is`.xyz.mpv.MPVLib
+import `is`.xyz.mpv.MPV
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
@@ -482,11 +482,13 @@ fun PlayerControls(
                                     onLongClick = viewModel::onSkipIntro,
                                 )
                             } else if (actionButton != null && customButtonTitle.isNotEmpty()) {
+                                // ANZ -->
                                 FilledControlsButton(
                                     text = customButtonTitle,
-                                    onClick = { actionButton.execute() },
-                                    onLongClick = { actionButton.executeLongPress() },
+                                    onClick = { actionButton.execute(viewModel.mpv) },
+                                    onLongClick = { actionButton.executeLongPress(viewModel.mpv) },
                                 )
+                                // ANZ <--
                             }
                         }
 
@@ -794,7 +796,9 @@ fun PlayerControls(
             decoder = decoder,
             onUpdateDecoder = viewModel::updateDecoder,
             speed = speed,
-            onSpeedChange = { MPVLib.setPropertyDouble("speed", it.toFixed(2).toDouble()) },
+            // ANZ -->
+            onSpeedChange = { viewModel.mpv.setPropertyDouble("speed", it.toFixed(2).toDouble()) },
+            // ANZ <--
             sleepTimerTimeRemaining = sleepTimerTimeRemaining,
             onStartSleepTimer = viewModel::startTimer,
             buttons = customButtons.getButtons(),

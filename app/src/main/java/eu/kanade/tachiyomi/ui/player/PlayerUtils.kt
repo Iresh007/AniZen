@@ -22,7 +22,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import androidx.compose.ui.unit.IntSize
-import `is`.xyz.mpv.MPVLib
+import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.Utils
 import logcat.LogPriority
 import logcat.logcat
@@ -60,18 +60,20 @@ internal fun Uri.getFileName(context: Context): String? {
     }
 }
 
+// ANZ -->
 /**
  * Returns the width and height of the video as it appears on the screen at 1x zoom.
  * This takes into account the video's aspect ratio and the screen's aspect ratio.
  */
-internal fun videoDisplaySize(screenSize: IntSize): Pair<Float, Float> {
+internal fun videoDisplaySize(screenSize: IntSize, mpv: MPV? = null): Pair<Float, Float> {
     val sw = screenSize.width.toFloat()
     val sh = screenSize.height.toFloat()
     // "video-params/aspect" tells us the video's actual ratio (e.g., 2.35:1)
-    val va = MPVLib.getPropertyDouble("video-params/aspect")?.toFloat() ?: (sw / sh)
+    val va = mpv?.getPropertyDouble("video-params/aspect")?.toFloat() ?: (sw / sh)
     val sa = sw / sh
     return if (va >= sa) Pair(sw, sw / va) else Pair(sh * va, sh)
 }
+// ANZ <--
 
 fun parseButtons(
     csv: String,

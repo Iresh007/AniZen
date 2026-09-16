@@ -68,7 +68,6 @@ import eu.kanade.tachiyomi.ui.player.videoDisplaySize
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
-import `is`.xyz.mpv.MPVLib
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
@@ -145,19 +144,21 @@ fun GestureHandler(
     fun rampSpeed(targetSpeed: Float, onComplete: () -> Unit = {}) {
         speedRampJob?.cancel()
         speedRampJob = scope.launch {
-            var currentSpeed = MPVLib.getPropertyDouble("speed").toFloat()
+            // ANZ -->
+            var currentSpeed = viewModel.mpv.getPropertyDouble("speed")?.toFloat() ?: 1f
             val step = if (targetSpeed > currentSpeed) 0.1f else -0.1f
-            
+
             while (if (step > 0) currentSpeed < targetSpeed else currentSpeed > targetSpeed) {
                 currentSpeed += step
                 if (step > 0 && currentSpeed > targetSpeed) currentSpeed = targetSpeed
                 if (step < 0 && currentSpeed < targetSpeed) currentSpeed = targetSpeed
-                
-                MPVLib.setPropertyDouble("speed", currentSpeed.toDouble())
+
+                viewModel.mpv.setPropertyDouble("speed", currentSpeed.toDouble())
                 viewModel.playerUpdate.update { PlayerUpdates.DoubleSpeed(currentSpeed, false) }
                 delay(16)
             }
-            MPVLib.setPropertyDouble("speed", targetSpeed.toDouble())
+            viewModel.mpv.setPropertyDouble("speed", targetSpeed.toDouble())
+            // ANZ <--
             viewModel.playerUpdate.update { PlayerUpdates.DoubleSpeed(targetSpeed, false) }
             onComplete()
         }
@@ -216,7 +217,9 @@ fun GestureHandler(
                                     viewModel.playerUpdate.update { PlayerUpdates.VideoZoom(zoom) }
 
                                     val scale = 2f.pow(zoom)
-                                    val (bw, bh) = videoDisplaySize(size)
+                                    // ANZ -->
+                                    val (bw, bh) = videoDisplaySize(size, viewModel.mpv)
+                                    // ANZ <--
                                     val panDX = midX - prevMidX
                                     val panDY = midY - prevMidY
                                     val targetPanX = panX + panDX / (bw * scale)
@@ -280,7 +283,9 @@ fun GestureHandler(
                                             viewModel.isLongPressing.update { true }
                                             isSpeedLongPress = true
                                             viewModel.unpause()
-                                            originalSpeed = MPVLib.getPropertyDouble("speed").toFloat()
+                                            // ANZ -->
+                                            originalSpeed = viewModel.mpv.getPropertyDouble("speed")?.toFloat() ?: 1f
+                                            // ANZ <--
                                             rampSpeed(playerPreferences.playerSpeedLongPress().get())
                                         }
                                         else -> {}
@@ -289,7 +294,9 @@ fun GestureHandler(
                                     if (longPressAction == LongPressAction.Speed) {
                                         viewModel.isLongPressing.update { true }
                                         isSpeedLongPress = true
-                                        originalSpeed = MPVLib.getPropertyDouble("speed").toFloat()
+                                        // ANZ -->
+                                        originalSpeed = viewModel.mpv.getPropertyDouble("speed")?.toFloat() ?: 1f
+                                        // ANZ <--
                                         rampSpeed(playerPreferences.playerSpeedLongPress().get())
                                     } else if (longPressAction == LongPressAction.Screenshot) {
                                         viewModel.sheetShown.update { Sheets.Screenshot }
@@ -331,10 +338,12 @@ fun GestureHandler(
                                     val dragDistance = abs(pointer.position.x - startPosition.x)
                                     if (hasInitializedDragSpeed || dragDistance > viewConfiguration.touchSlop) {
                                         if (!hasInitializedDragSpeed) {
+                                            // ANZ -->
                                             unsnappedCurrentSpeed = maxOf(
                                                 playerPreferences.playerSpeedLongPress().get(),
-                                                MPVLib.getPropertyDouble("speed").toFloat(),
+                                                viewModel.mpv.getPropertyDouble("speed")?.toFloat() ?: 1f,
                                             ).toDouble()
+                                            // ANZ <--
                                             hasInitializedDragSpeed = true
                                             lastX = pointer.position.x
                                         }
@@ -343,7 +352,9 @@ fun GestureHandler(
                                             unsnappedCurrentSpeed = (unsnappedCurrentSpeed + diffX * 0.0035).coerceIn(0.25, 4.0)
                                             val snappedSpeed = (Math.round(unsnappedCurrentSpeed * 2.0) / 2.0).toFloat().coerceIn(0.5f, 4.0f)
                                             speedRampJob?.cancel()
-                                            MPVLib.setPropertyDouble("speed", snappedSpeed.toDouble())
+                                            // ANZ -->
+                                            viewModel.mpv.setPropertyDouble("speed", snappedSpeed.toDouble())
+                                            // ANZ <--
                                             viewModel.playerUpdate.update { PlayerUpdates.DoubleSpeed(snappedSpeed, isDragging = true) }
                                             lastX = pointer.position.x
                                         }

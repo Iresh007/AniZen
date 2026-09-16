@@ -72,6 +72,8 @@ import eu.kanade.presentation.player.components.ExpandableCard
 import eu.kanade.presentation.player.components.SliderItem
 import eu.kanade.tachiyomi.ui.player.DebandSettings
 import eu.kanade.tachiyomi.ui.player.Debanding
+import androidx.compose.ui.platform.LocalContext
+import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.VideoFilterTheme
 import eu.kanade.tachiyomi.ui.player.VideoFilters
 import eu.kanade.tachiyomi.ui.player.applyAnime4K
@@ -83,7 +85,6 @@ import eu.kanade.tachiyomi.ui.player.utils.Anime4KManager
 import eu.kanade.tachiyomi.ui.player.controls.CARDS_MAX_WIDTH
 import eu.kanade.tachiyomi.ui.player.controls.panelCardsColors
 import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
-import `is`.xyz.mpv.MPVLib
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -158,6 +159,10 @@ fun VideoFiltersPanel(
 fun FilterPresetsCard() {
     val decoderPreferences = remember { Injekt.get<DecoderPreferences>() }
     var isExpanded by remember { mutableStateOf(false) }
+    // ANZ -->
+    val activity = LocalContext.current as? PlayerActivity
+    val mpv = activity?.viewModel?.mpv
+    // ANZ <--
 
     // Collect current values for matching
     val brightness by decoderPreferences.brightnessFilter().collectAsState()
@@ -202,7 +207,9 @@ fun FilterPresetsCard() {
                             selected = currentPreset == theme,
                             onClick = {
                                 decoderPreferences.videoFilterTheme().set(theme.ordinal)
-                                applyTheme(theme, decoderPreferences)
+                                // ANZ -->
+                                applyTheme(mpv, theme, decoderPreferences)
+                                // ANZ <--
                             },
                             label = { Text(stringResource(theme.titleRes)) },
                         )
@@ -228,6 +235,10 @@ fun FilterPresetsCard() {
 fun FiltersCard() {
     val decoderPreferences = remember { Injekt.get<DecoderPreferences>() }
     var isExpanded by remember { mutableStateOf(true) }
+    // ANZ -->
+    val activity = LocalContext.current as? PlayerActivity
+    val mpv = activity?.viewModel?.mpv
+    // ANZ <--
 
     ExpandableCard(
         isExpanded = isExpanded,
@@ -246,13 +257,15 @@ fun FiltersCard() {
                     VideoFilters.entries.forEach {
                         it.preference(decoderPreferences).delete()
                     }
-                    MPVLib.setPropertyString("vf", "")
-                    MPVLib.setPropertyInt("brightness", 0)
-                    MPVLib.setPropertyInt("contrast", 0)
-                    MPVLib.setPropertyInt("saturation", 0)
-                    MPVLib.setPropertyInt("gamma", 0)
-                    MPVLib.setPropertyInt("hue", 0)
-                    MPVLib.setPropertyInt("sharpen", 0)
+                    // ANZ -->
+                    mpv?.setPropertyString("vf", "")
+                    mpv?.setPropertyInt("brightness", 0)
+                    mpv?.setPropertyInt("contrast", 0)
+                    mpv?.setPropertyInt("saturation", 0)
+                    mpv?.setPropertyInt("gamma", 0)
+                    mpv?.setPropertyInt("hue", 0)
+                    mpv?.setPropertyInt("sharpen", 0)
+                    // ANZ <--
                 },
             ) {
                 Text(text = stringResource(MR.strings.action_reset))
@@ -271,7 +284,9 @@ fun FiltersCard() {
                         valueText = value.toString(),
                         onChange = {
                             filter.preference(decoderPreferences).set(it.toInt())
-                            applyFilter(filter, it.toInt(), decoderPreferences)
+                            // ANZ -->
+                            applyFilter(mpv, filter, it.toInt(), decoderPreferences)
+                            // ANZ <--
                         },
                         max = filter.max.toFloat(),
                         min = filter.min.toFloat(),
@@ -288,6 +303,10 @@ fun DebandCard() {
     val decoderPreferences = remember { Injekt.get<DecoderPreferences>() }
     val debandMode by decoderPreferences.videoDebanding().collectAsState()
     var isExpanded by remember { mutableStateOf(true) }
+    // ANZ -->
+    val activity = LocalContext.current as? PlayerActivity
+    val mpv = activity?.viewModel?.mpv
+    // ANZ <--
 
     ExpandableCard(
         isExpanded = isExpanded,
@@ -313,7 +332,9 @@ fun DebandCard() {
                         checked = debandMode == mode,
                         onCheckedChange = {
                             decoderPreferences.videoDebanding().set(mode)
-                            applyDebandMode(mode, decoderPreferences)
+                            // ANZ -->
+                            applyDebandMode(mpv, mode, decoderPreferences)
+                            // ANZ <--
                         }
                     ) {
                         when (mode) {
@@ -330,12 +351,14 @@ fun DebandCard() {
                 
                 TextButton(onClick = {
                     decoderPreferences.videoDebanding().set(Debanding.None)
-                    applyDebandMode(Debanding.None, decoderPreferences)
+                    // ANZ -->
+                    applyDebandMode(mpv, Debanding.None, decoderPreferences)
                     DebandSettings.entries.forEach { setting ->
                         val pref = setting.preference(decoderPreferences)
                         pref.delete()
-                        MPVLib.setPropertyInt(setting.mpvProperty, pref.get())
+                        mpv?.setPropertyInt(setting.mpvProperty, pref.get())
                     }
+                    // ANZ <--
                 }) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
@@ -358,7 +381,9 @@ fun DebandCard() {
                                 valueText = value.toString(),
                                 onChange = {
                                     setting.preference(decoderPreferences).set(it)
-                                    applyDebandSetting(setting, it)
+                                    // ANZ -->
+                                    applyDebandSetting(mpv, setting, it)
+                                    // ANZ <--
                                 },
                                 max = setting.end,
                                 min = setting.start,
@@ -377,6 +402,10 @@ fun Anime4KCard() {
     val anime4kManager = remember { Injekt.get<Anime4KManager>() }
     val enableAnime4K by decoderPreferences.enableAnime4K().collectAsState()
     var isExpanded by remember { mutableStateOf(false) }
+    // ANZ -->
+    val activity = LocalContext.current as? PlayerActivity
+    val mpv = activity?.viewModel?.mpv
+    // ANZ <--
 
     ExpandableCard(
         isExpanded = isExpanded,
@@ -408,7 +437,9 @@ fun Anime4KCard() {
                     checked = enableAnime4K,
                     onCheckedChange = {
                         decoderPreferences.enableAnime4K().set(it)
-                        applyAnime4K(decoderPreferences, anime4kManager)
+                        // ANZ -->
+                        applyAnime4K(mpv, decoderPreferences, anime4kManager)
+                        // ANZ <--
                     }
                 )
             }
@@ -433,7 +464,9 @@ fun Anime4KCard() {
                             selected = anime4kMode == mode.name,
                             onClick = {
                                 decoderPreferences.anime4kMode().set(mode.name)
-                                applyAnime4K(decoderPreferences, anime4kManager)
+                                // ANZ -->
+                                applyAnime4K(mpv, decoderPreferences, anime4kManager)
+                                // ANZ <--
                             },
                             label = { Text(mode.name.replace("_", "+")) },
                         )
@@ -460,7 +493,9 @@ fun Anime4KCard() {
                             selected = anime4kQuality == quality.name,
                             onClick = {
                                 decoderPreferences.anime4kQuality().set(quality.name)
-                                applyAnime4K(decoderPreferences, anime4kManager)
+                                // ANZ -->
+                                applyAnime4K(mpv, decoderPreferences, anime4kManager)
+                                // ANZ <--
                             },
                             label = { Text(label) },
                         )
