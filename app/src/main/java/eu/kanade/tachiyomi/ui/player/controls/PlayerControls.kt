@@ -48,6 +48,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import eu.kanade.tachiyomi.ui.player.VideoTrack
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -733,9 +736,17 @@ fun PlayerControls(
 
         val sheetShown by viewModel.sheetShown.collectAsState()
         val dismissSheet by viewModel.dismissSheet.collectAsState()
-        val subtitles by viewModel.subtitleTracks.collectAsState()
+        val internalSubtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
+        val externalSubtitles by viewModel.externalSubtitleTracks.collectAsState()
+        val subtitles = remember(internalSubtitles, externalSubtitles) {
+            internalSubtitles.map { VideoTrack.Internal(it) } + externalSubtitles
+        }
+        val internalAudioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
+        val externalAudioTracks by viewModel.externalAudioTracks.collectAsState()
+        val audioTracks = remember(internalAudioTracks, externalAudioTracks) {
+            internalAudioTracks.map { VideoTrack.Internal(it) } + externalAudioTracks
+        }
         val selectedSubtitles by viewModel.selectedSubtitles.collectAsState()
-        val audioTracks by viewModel.audioTracks.collectAsState()
         val selectedAudio by viewModel.selectedAudio.collectAsState()
         val isLoadingHosters by viewModel.isLoadingHosters.collectAsState()
         val hosterState by viewModel.hosterState.collectAsState()

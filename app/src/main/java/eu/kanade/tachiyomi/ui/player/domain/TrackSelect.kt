@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.ui.player.domain
 
 import androidx.core.os.LocaleListCompat
-import eu.kanade.presentation.util.parseCommaSeparatedList
 import eu.kanade.tachiyomi.ui.player.VideoTrack
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
@@ -11,6 +10,9 @@ import java.util.Locale
 import java.util.MissingResourceException
 
 // ANZ -->
+private fun String.parseCommaSeparatedList(): List<String> =
+    split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
 class TrackSelect(
     private val subtitlePreferences: SubtitlePreferences = Injekt.get(),
     private val audioPreferences: AudioPreferences = Injekt.get(),
@@ -34,7 +36,7 @@ class TrackSelect(
             ""
         }.parseCommaSeparatedList()
 
-        val locales = prefLangs.map(::Locale).ifEmpty {
+        val locales = prefLangs.map { Locale(it) }.ifEmpty {
             listOf(LocaleListCompat.getDefault()[0]!!)
         }
 
@@ -68,7 +70,7 @@ class TrackSelect(
 
             return trackTitle.contains(localName, true) ||
                 trackTitle.contains(englishName, true) ||
-                track.lang.let { langRegex.find(it) != null }
+                (track.lang?.let { langRegex.find(it) != null } ?: false)
         } catch (_: MissingResourceException) {
             return false
         }

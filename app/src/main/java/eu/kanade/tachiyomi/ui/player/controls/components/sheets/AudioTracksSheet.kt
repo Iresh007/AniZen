@@ -20,34 +20,36 @@ package eu.kanade.tachiyomi.ui.player.controls.components.sheets
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import eu.kanade.tachiyomi.ui.player.PlayerViewModel.VideoTrack
+import androidx.compose.ui.unit.dp
+import eu.kanade.tachiyomi.ui.player.TrackState
+import eu.kanade.tachiyomi.ui.player.VideoTrack
+import kotlinx.collections.immutable.ImmutableList
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 
+// ANZ -->
 @Composable
 fun AudioTracksSheet(
-    tracks: List<VideoTrack>,
-    selectedId: Int,
+    tracks: ImmutableList<VideoTrack>,
     onSelect: (VideoTrack) -> Unit,
     onAddAudioTrack: () -> Unit,
     onOpenDelayPanel: () -> Unit,
@@ -79,17 +81,9 @@ fun AudioTracksSheet(
             )
         },
         track = {
-            val isSelected = when (it) {
-                is VideoTrack.Internal -> selectedId == it.id
-                is VideoTrack.External -> selectedId == it.mpvId
-            }
-            val isLoading = it is VideoTrack.External && it.isLoading
-            val isFailed = it is VideoTrack.External && it.isFailed
             AudioTrackRow(
-                title = getTrackTitle(it),
-                isSelected = isSelected,
-                isLoading = isLoading,
-                isFailed = isFailed,
+                track = it,
+                isSelected = it.selection > -1,
                 onClick = { onSelect(it) },
             )
         },
@@ -99,12 +93,10 @@ fun AudioTracksSheet(
 
 @Composable
 fun AudioTrackRow(
-    title: String,
+    track: VideoTrack,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    isLoading: Boolean = false,
-    isFailed: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -119,21 +111,16 @@ fun AudioTrackRow(
             onClick = onClick,
         )
         Text(
-            title,
+            text = getTrackTitle(track),
             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
             fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
         )
-        if (isLoading) {
-            Spacer(modifier = Modifier.weight(1f))
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-        } else if (isFailed) {
-            Spacer(modifier = Modifier.weight(1f))
-            Icon(
-                imageVector = Icons.Default.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(24.dp),
-            )
+        Spacer(modifier = Modifier.weight(1f))
+        if (track is VideoTrack.External && track.state == TrackState.Loading) {
+            CircularProgressIndicator(modifier = Modifier.then(Modifier.size(24.dp)))
+        } else if (track is VideoTrack.External && track.state == TrackState.Error) {
+            Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
         }
     }
 }
+// ANZ <--

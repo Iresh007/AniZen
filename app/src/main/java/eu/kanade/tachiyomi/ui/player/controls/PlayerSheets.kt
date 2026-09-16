@@ -27,8 +27,9 @@ import androidx.compose.runtime.remember
 import dev.vivvvek.seeker.Segment
 import eu.kanade.tachiyomi.ui.player.Decoder
 import eu.kanade.tachiyomi.ui.player.Panels
-import eu.kanade.tachiyomi.ui.player.PlayerViewModel.VideoTrack
 import eu.kanade.tachiyomi.ui.player.Sheets
+import eu.kanade.tachiyomi.ui.player.VideoTrack
+import kotlinx.collections.immutable.toImmutableList
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.AspectRatioItem
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.AspectRatioSheet
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.AudioTracksSheet
@@ -119,8 +120,7 @@ fun PlayerSheets(
                 onAddSubtitle(it)
             }
             SubtitlesSheet(
-                tracks = subtitles,
-                selectedTracks = selectedSubtitles,
+                tracks = subtitles.toImmutableList(),
                 onSelect = onSelectSubtitle,
                 onAddSubtitle = { subtitlesPicker.launch(arrayOf("*/*")) },
                 onOpenSubtitleSettings = { onOpenPanel(Panels.SubtitleSettings) },
@@ -137,8 +137,7 @@ fun PlayerSheets(
                 onAddAudio(it)
             }
             AudioTracksSheet(
-                tracks = audioTracks,
-                selectedId = selectedAudio,
+                tracks = audioTracks.toImmutableList(),
                 onSelect = onSelectAudio,
                 onAddAudioTrack = { audioPicker.launch(arrayOf("*/*")) },
                 onOpenDelayPanel = { onOpenPanel(Panels.AudioDelay) },
