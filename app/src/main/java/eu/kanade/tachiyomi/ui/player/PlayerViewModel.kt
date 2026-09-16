@@ -726,7 +726,7 @@ class PlayerViewModel @JvmOverloads constructor(
         // ANZ -->
         val count = mpv.getPropertyInt("chapter-list/count") ?: 0
         for (i in 0 until count) {
-            val title = mpv.getPropertyString("chapter-list/$i/title")
+            val title = mpv.getPropertyString("chapter-list/$i/title") ?: ""
             val time = mpv.getPropertyInt("chapter-list/$i/time") ?: 0
         // ANZ <--
             chapters.add(
