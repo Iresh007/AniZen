@@ -375,9 +375,9 @@ class PlayerViewModel @JvmOverloads constructor(
     private val _skipIntroText = MutableStateFlow<String?>(null)
     val skipIntroText = _skipIntroText.asStateFlow()
 
-    private val _controlsShown = MutableStateFlow(true)
+    private val _controlsShown = MutableStateFlow(!playerPreferences.hideControls().get())
     val controlsShown = _controlsShown.asStateFlow()
-    private val _seekBarShown = MutableStateFlow(true)
+    private val _seekBarShown = MutableStateFlow(!playerPreferences.hideControls().get())
     val seekBarShown = _seekBarShown.asStateFlow()
     private val _areControlsLocked = MutableStateFlow(false)
     val areControlsLocked = _areControlsLocked.asStateFlow()
@@ -982,6 +982,7 @@ class PlayerViewModel @JvmOverloads constructor(
             }
         }
         _controlsShown.update { true }
+        _seekBarShown.update { true }
     }
 
     fun hideControls() {
@@ -989,6 +990,7 @@ class PlayerViewModel @JvmOverloads constructor(
             eventChannel.send(Event.SetStatusBar(false))
         }
         _controlsShown.update { false }
+        _seekBarShown.update { false }
     }
 
     fun hideSeekBar() {
