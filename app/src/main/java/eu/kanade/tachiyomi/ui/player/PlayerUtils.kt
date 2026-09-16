@@ -23,9 +23,16 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import androidx.compose.ui.unit.IntSize
 import `is`.xyz.mpv.MPV
+import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import logcat.logcat
+import kotlin.properties.ReadOnlyProperty
+import kotlin.reflect.KProperty
 
 internal fun Uri.openContentFd(context: Context): String? {
     return context.contentResolver.openFileDescriptor(this, "r")?.detachFd()?.let { fd ->
@@ -61,6 +68,17 @@ internal fun Uri.getFileName(context: Context): String? {
 }
 
 // ANZ -->
+inline fun <reified T> MPVNode.toObject(json: Json): T = json.decodeFromString<T>(toJson())
+
+fun <T> Flow<T>.collectAsState(scope: CoroutineScope, initialValue: T? = null) =
+    object : ReadOnlyProperty<Any?, T?> {
+        private var value: T? = initialValue
+        init {
+            scope.launch { collect { value = it } }
+        }
+        override fun getValue(thisRef: Any?, property: KProperty<*>) = value
+    }
+
 /**
  * Returns the width and height of the video as it appears on the screen at 1x zoom.
  * This takes into account the video's aspect ratio and the screen's aspect ratio.

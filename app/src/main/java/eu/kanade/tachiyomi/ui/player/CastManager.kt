@@ -71,10 +71,9 @@ class CastManager(
     private val context = activity.applicationContext
     private val viewModel by lazy {
         when (activity) {
-            is PlayerActivity -> {
-                val factory = PlayerViewModelProviderFactory(activity)
-                activity.viewModels<PlayerViewModel> { factory }.value
-            }
+            // ANZ -->
+            is PlayerActivity -> activity.viewModel
+            // ANZ <--
             else -> null
         }
     }

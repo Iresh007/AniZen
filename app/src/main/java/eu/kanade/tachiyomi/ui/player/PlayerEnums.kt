@@ -50,6 +50,14 @@ enum class SetAsCover {
     Error,
 }
 
+// ANZ -->
+enum class ArtType {
+    Cover,
+    Background,
+    Thumbnail,
+}
+// ANZ <--
+
 enum class PlayerOrientation(val titleRes: StringResource) {
     Free(MR.strings.rotation_free),
     Video(MR.strings.rotation_video),

@@ -15,12 +15,23 @@
  * limitations under the License.
  */
 
-/**
+/*
  * Code is a mix between PlayerActivity from mpvKt and the former
  * PlayerActivity from Aniyomi.
  */
 
 package eu.kanade.tachiyomi.ui.player
+
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import eu.kanade.domain.ui.UiPreferences
+import eu.kanade.presentation.theme.DynamicTachiyomiTheme
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.network.HttpServer
+import eu.kanade.tachiyomi.util.asAnimeCover
+import eu.kanade.tachiyomi.util.system.CoverColorObserver
+import tachiyomi.presentation.core.util.collectAsState as collectAsStatePref
+
 
 import android.annotation.SuppressLint
 import android.app.PictureInPictureParams
@@ -30,7 +41,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
-import android.content.res.AssetManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.media.AudioManager
@@ -39,22 +49,23 @@ import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.os.PowerManager
+import android.util.DisplayMetrics
 import android.util.Rational
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
-import androidx.activity.addCallback
+import android.view.inputmethod.InputMethodManager
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import tachiyomi.presentation.core.util.collectAsState as collectAsStatePref
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -63,25 +74,20 @@ import androidx.lifecycle.viewModelScope
 import androidx.media.AudioAttributesCompat
 import androidx.media.AudioFocusRequestCompat
 import androidx.media.AudioManagerCompat
+import animiru.feature.mpvfiles.MpvConfig
+import animiru.feature.mpvfiles.MpvConfig.Companion.MPV_DIR
 import com.hippo.unifile.UniFile
 import eu.kanade.domain.connections.service.ConnectionsPreferences
-import eu.kanade.domain.ui.UiPreferences
-import eu.kanade.presentation.theme.DynamicTachiyomiTheme
 import eu.kanade.presentation.theme.TachiyomiTheme
 import eu.kanade.tachiyomi.animesource.model.ChapterType
 import eu.kanade.tachiyomi.animesource.model.Hoster
-import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.SerializableHoster.Companion.serialize
 import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.data.connections.discord.DiscordRPCService
 import eu.kanade.tachiyomi.data.connections.discord.PlayerData
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.data.torrentServer.service.TorrentServerService
-import eu.kanade.tachiyomi.databinding.PlayerLayoutBinding
-import eu.kanade.tachiyomi.network.NetworkHelper
-import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.source.isNsfw
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.torrentServer.TorrentServerApi
@@ -92,83 +98,67 @@ import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
-import eu.kanade.tachiyomi.ui.player.utils.ChapterUtils
+import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
 import eu.kanade.tachiyomi.ui.player.utils.ChapterUtils.Companion.getStringRes
 import eu.kanade.tachiyomi.util.system.powerManager
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.MPVNode
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 import logcat.LogPriority
-import tachiyomi.domain.anime.model.asAnimeCover
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.launchUI
 import tachiyomi.core.common.util.lang.withUIContext
+import tachiyomi.core.common.util.system.UrlUtils
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.custombuttons.model.CustomButton
-import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.i18n.MR
+
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
 import java.util.Calendar
 import kotlin.math.ceil
 import kotlin.math.floor
-
-import eu.kanade.tachiyomi.data.download.DownloadManager
-import eu.kanade.tachiyomi.data.download.DownloadProvider
-import eu.kanade.tachiyomi.util.storage.DiskUtil
-import uy.kohesive.injekt.injectLazy
+import kotlin.time.Duration.Companion.milliseconds
 
 class PlayerActivity : BaseActivity() {
-    internal val viewModel by viewModels<PlayerViewModel>(factoryProducer = { PlayerViewModelProviderFactory(this) })
     // ANZ -->
-    private val mpv by lazy { viewModel.mpv }
+    private var httpServer: HttpServer? = null
     // ANZ <--
-    private val downloadManager: DownloadManager by injectLazy()
-    private val downloadProvider: DownloadProvider by injectLazy()
-    private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
+    private val viewModel by viewModels<PlayerViewModel>()
+    private val mpv by lazy { viewModel.mpv }
+    private val player by lazy { AniyomiMPVView(this, null) }
     private val playerObserver by lazy { PlayerObserver(this) }
-    val player by lazy { binding.player }
-    val windowInsetsController by lazy { WindowCompat.getInsetsController(window, window.decorView) }
-    val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    private var lastThermalStatus: Int = -1
-    private val thermalListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        PowerManager.OnThermalStatusChangedListener { status ->
-            if (status >= 3 && status != lastThermalStatus) { // 3 = PowerManager.THERMAL_STATUS_THROTTLING
-                lastThermalStatus = status
-                player.checkAdaptiveScaling(Long.MAX_VALUE) // Force check on thermal event
-            }
-        }
-    } else {
-        null
-    }
+    private val windowInsetsController by lazy { WindowCompat.getInsetsController(window, window.decorView) }
+    private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
+    private val inputMethodManager by lazy { getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager }
 
     private var mediaSession: MediaSession? = null
-    private val gesturePreferences: GesturePreferences by lazy { viewModel.gesturePreferences }
-    private val playerPreferences: PlayerPreferences by lazy { viewModel.playerPreferences }
+    private val gesturePreferences: GesturePreferences = Injekt.get()
+    private val playerPreferences: PlayerPreferences = Injekt.get()
     private val audioPreferences: AudioPreferences = Injekt.get()
     private val advancedPlayerPreferences: AdvancedPlayerPreferences = Injekt.get()
-    private val networkPreferences: NetworkPreferences = Injekt.get()
-    private val networkHelper: NetworkHelper = Injekt.get()
-    private val storageManager: StorageManager = Injekt.get()
+    private val subtitlePreferences: SubtitlePreferences = Injekt.get()
+
+    // ANK -->
+    private val mpvConfig: MpvConfig = Injekt.get()
+    // ANK <--
 
     // Cast -->
     val castManager: CastManager by lazy { CastManager(this, Injekt.get()) }
     // <-- Cast
+
+    // AM (CONNECTIONS) -->
+    private val connectionsPreferences: ConnectionsPreferences = Injekt.get()
+    // <-- AM (CONNECTIONS)
 
     private var audioFocusRequest: AudioFocusRequestCompat? = null
     private var restoreAudioFocus: () -> Unit = {}
@@ -180,11 +170,6 @@ class PlayerActivity : BaseActivity() {
     }
 
     private var pipReceiver: BroadcastReceiver? = null
-    private var httpServer: HttpServer? = null
-
-    val isTv by lazy {
-        packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-    }
 
     private val noisyReceiver = object : BroadcastReceiver() {
         var initialized = false
@@ -214,13 +199,21 @@ class PlayerActivity : BaseActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
         }
+
+        // ANK -->
+        /** Upper bound on how long player startup blocks on a pending mpv config copy. */
+        private const val MPV_COPY_AWAIT_TIMEOUT_MS = 5_000L
+        // ANK <--
+
+        // ANK -->
+        /** mpv option names start alphanumeric and hold nothing but these; anything else is not one. */
+        private val MPV_OPTION_NAME_REGEX = Regex("^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+        /** A value made up of only these needs none of mpv's escaping mechanisms. */
+        private val MPV_PLAIN_OPTION_VALUE_REGEX = Regex("^[a-zA-Z0-9_.:/+-]*$")
+        // ANK <--
     }
 
-    // AM (CONNECTIONS) -->
-    private val connectionsPreferences: ConnectionsPreferences = Injekt.get()
-    // <-- AM (CONNECTIONS)
-
-    @SuppressLint("MissingSuperCall")
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
 
@@ -242,37 +235,28 @@ class PlayerActivity : BaseActivity() {
         viewModel.saveCurrentEpisodeWatchingProgress()
 
         lifecycleScope.launchNonCancellable {
-            try {
-                viewModel.updateIsLoadingEpisode(true)
-                viewModel.updateIsLoadingHosters(true)
+            viewModel.updateIsLoadingEpisode(true)
+            viewModel.updateIsLoadingHosters(true)
 
-                val initResult = viewModel.init(animeId, episodeId, hostList, hostIndex, vidIndex)
-                if (!initResult.second.getOrDefault(false)) {
-                    val exception = initResult.second.exceptionOrNull() ?: IllegalStateException(
-                        "Unknown error",
-                    )
-                    withUIContext {
-                        setInitialEpisodeError(exception)
-                    }
-                    return@launchNonCancellable
+            val initResult = viewModel.init(animeId, episodeId, hostList, hostIndex, vidIndex)
+            if (!initResult.second.getOrDefault(false)) {
+                val exception = initResult.second.exceptionOrNull() ?: IllegalStateException(
+                    "Unknown error",
+                )
+                withUIContext {
+                    setInitialEpisodeError(exception)
                 }
+            }
 
-                viewModel.updateIsLoadingHosters(false)
+            viewModel.updateIsLoadingHosters(false)
 
+            lifecycleScope.launch {
                 viewModel.loadHosters(
                     source = viewModel.currentSource.value!!,
                     hosterList = initResult.first.hosterList ?: emptyList(),
                     hosterIndex = initResult.first.videoIndex.first,
                     videoIndex = initResult.first.videoIndex.second,
                 )
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Error during initialization" }
-                viewModel.updateIsLoadingEpisode(false)
-                viewModel.updateIsLoadingHosters(false)
-                viewModel.setIsStopped(true)
-                withUIContext {
-                    setInitialEpisodeError(e)
-                }
             }
         }
 
@@ -281,38 +265,31 @@ class PlayerActivity : BaseActivity() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         registerSecureActivity(this)
-        setContentView(binding.root)
+        super.onCreate(savedInstanceState)
+
+        // ANK -->
+        // Registers before setupPlayerMPV() so MpvConfig stops wiping the config directory for as
+        // long as this player lives.
+        mpvConfig.onPlayerCreated()
+        // ANK <--
+
         setupPlayerMPV()
-
-        player.onPlayerReady = {
-            viewModel.currentVideo.value?.let { video ->
-                val pos = viewModel.pos.value.takeIf { it > 0f }?.toLong()
-                setVideo(video, pos)
-            }
-        }
-
         setupPlayerAudio()
         setupMediaSession()
         setupPlayerOrientation()
 
-        onBackPressedDispatcher.addCallback(this) {
-            if (viewModel.dialogShown.value != Dialogs.None) {
-                viewModel.showDialog(Dialogs.None)
-                return@addCallback
+        // ANZ -->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            powerManager?.addThermalStatusListener { status ->
+                if (status >= android.os.PowerManager.THERMAL_STATUS_SEVERE) {
+                    player.checkAdaptiveScaling(Long.MAX_VALUE)
+                }
             }
-            if (viewModel.sheetShown.value != Sheets.None) {
-                viewModel.dismissSheet()
-                return@addCallback
-            }
-            if (viewModel.panelShown.value != Panels.None) {
-                viewModel.showPanel(Panels.None)
-                return@addCallback
-            }
-            finish()
         }
+        // ANZ <--
 
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             runOnUiThread {
@@ -332,58 +309,126 @@ class PlayerActivity : BaseActivity() {
                         onShareImageResult(event.uri, event.seconds)
                     }
                     is PlayerViewModel.Event.SetCoverResult -> {
-                        onSetAsCoverResult(event.result)
+                        onSetAsArtResult(event.result, event.artType)
                     }
+                    is PlayerViewModel.Event.ShowToast -> {
+                        showToast(stringResource(event.stringResource))
+                    }
+                    is PlayerViewModel.Event.ShowToastString -> {
+                        showToast(event.string)
+                    }
+                    is PlayerViewModel.Event.ChangeEpisode -> {
+                        changeEpisode(event.episodeId, event.autoPlay)
+                    }
+                    is PlayerViewModel.Event.SetVideo -> {
+                        setVideo(event.video)
+                    }
+                    is PlayerViewModel.Event.SetStatusBar -> {
+                        if (event.show) {
+                            windowInsetsController.show(WindowInsetsCompat.Type.statusBars())
+                        } else {
+                            windowInsetsController.hide(WindowInsetsCompat.Type.statusBars())
+                        }
+                    }
+                    is PlayerViewModel.Event.SetBrightness -> {
+                        window.attributes = window.attributes.apply {
+                            screenBrightness = event.brightness
+                        }
+                    }
+                    is PlayerViewModel.Event.ChangeVideoAspect -> {
+                        changeVideoAspect(event.aspect)
+                    }
+                    PlayerViewModel.Event.CycleRotations -> {
+                        cycleRotations()
+                    }
+                    is PlayerViewModel.Event.SetKeyboard -> {
+                        if (event.show) {
+                            forceShowSoftwareKeyboard()
+                        } else {
+                            forceHideSoftwareKeyboard()
+                        }
+                    }
+                    PlayerViewModel.Event.ToggleKeyboard -> {
+                        toggleShowSoftwareKeyboard()
+                    }
+                    // ANK -->
+                    is PlayerViewModel.Event.SetVideoLoadError -> {
+                        setInitialEpisodeError(event.error)
+                    }
+                    // ANK <--
                 }
             }
             .launchIn(lifecycleScope)
-        viewModel.viewModelScope.launchIO {
-            // AM (DISCORD) -->
-            updateDiscordRPC(exitingPlayer = false)
 
-            // <-- AM (DISCORD)
+        // AM (DISCORD) -->
+        viewModel.viewModelScope.launchIO {
+            updateDiscordRPC(exitingPlayer = false)
         }
+        // <-- AM (DISCORD)
+
         // Cast -->
         castManager
         // <-- Cast
 
- binding.controls.setContent {
+        setContent {
+            // ANZ -->
             val uiPreferences = remember { Injekt.get<UiPreferences>() }
             val dynamicPlayerTheme by uiPreferences.dynamicPlayerTheme().collectAsStatePref()
             val anime by viewModel.currentAnime.collectAsState()
-            val vibrantColors by eu.kanade.tachiyomi.util.system.CoverColorObserver.vibrantColors.collectAsState()
+            val vibrantColors by CoverColorObserver.vibrantColors.collectAsState()
             val vibrantColor = anime?.let { vibrantColors[it.id] ?: it.asAnimeCover().vibrantCoverColor }
             DynamicTachiyomiTheme(
                 colorSeed = vibrantColor,
                 enabled = dynamicPlayerTheme,
             ) {
-                PlayerControls(
-                    viewModel = viewModel,
-                    castManager = castManager, // Pass the castManager instance
-                    onBackPress = {
-                        finish()
-                    },
-                    modifier = Modifier.onGloballyPositioned {
-                        pipRect = run {
-                            val boundsInWindow = it.boundsInWindow()
-                            Rect(
-                                boundsInWindow.left.toInt(),
-                                boundsInWindow.top.toInt(),
-                                boundsInWindow.right.toInt(),
-                                boundsInWindow.bottom.toInt(),
-                            )
-                        }
-                    },
-                )
+            // ANZ <--
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AndroidView(
+                        factory = { player },
+                        modifier = Modifier.onGloballyPositioned {
+                            pipRect = run {
+                                val boundsInWindow = it.boundsInWindow()
+                                Rect(
+                                    boundsInWindow.left.toInt(),
+                                    boundsInWindow.top.toInt(),
+                                    boundsInWindow.right.toInt(),
+                                    boundsInWindow.bottom.toInt(),
+                                )
+                            }
+                        },
+                    )
+                    PlayerControls(
+                        viewModel = viewModel,
+                        castManager = castManager, // Pass the castManager instance
+                        onBackPress = {
+                            if (isPipSupportedAndEnabled && viewModel.paused.value == false &&
+                                playerPreferences.pipOnExit().get()
+                            ) {
+                                enterPictureInPictureMode(createPipParams())
+                            } else {
+                                finish()
+                            }
+                        },
+                    )
+                }
             }
         }
+
+        // ANK -->
+        // Migrate system back gesture handling to OnBackPressedDispatcher
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() = backPressed()
+            },
+        )
+        // ANK <--
 
         onNewIntent(this.intent)
     }
 
     override fun onDestroy() {
         player.isExiting = true
-        PlayerStats.reset()
 
         // ANZ -->
         val serverToStop = httpServer
@@ -410,23 +455,35 @@ class PlayerActivity : BaseActivity() {
             noisyReceiver.initialized = false
         }
 
-        // ANZ -->
-        player.release()
-        viewModel.safeMpvCall {
-            it.removeLogObserver(playerObserver)
-            it.removeObserver(playerObserver)
-        }
-        // ANZ <--
+        mpv.removeLogObserver(playerObserver)
+        mpv.removeObserver(playerObserver)
+        // ANK -->
+        // `mpv` is owned by the retained PlayerViewModel and must survive activity
+        // recreation (e.g. config changes), so it's closed in onCleared() instead of here.
+        // mpv.close()
+        // ANK <--
         castManager.cleanup()
+
+        // ANK -->
+        mpvConfig.onPlayerDestroyed()
+        // ANK <--
 
         // AM (DISCORD) -->
         updateDiscordRPC(exitingPlayer = true)
         // <-- AM (DISCORD)
+
         super.onDestroy()
     }
 
     override fun onPause() {
         viewModel.saveCurrentEpisodeWatchingProgress()
+
+        // Maintain active Cast session
+        castManager.maintainCastSessionBackground()
+
+        // AM (DISCORD) -->
+        updateDiscordRPC(exitingPlayer = true)
+        // <-- AM (DISCORD)
 
         if (isInPictureInPictureMode) {
             super.onPause()
@@ -434,10 +491,19 @@ class PlayerActivity : BaseActivity() {
         }
 
         player.isExiting = true
+
+        // ANZ -->
+        val serverToStop = httpServer
+        httpServer = null
+        if (serverToStop != null) {
+            lifecycleScope.launchIO {
+                runCatching { serverToStop.stop() }
+            }
+        }
+        // ANZ <--
         if (isFinishing) {
-            // ANZ -->
-            viewModel.safeMpvCall { it.command("stop") }
-            // ANZ <--
+            viewModel.deletePendingEpisodes()
+            mpv.command("stop")
         } else {
             viewModel.pause()
         }
@@ -446,45 +512,47 @@ class PlayerActivity : BaseActivity() {
     }
 
     override fun onStop() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && thermalListener != null) {
-            powerManager.removeThermalStatusListener(thermalListener)
-        }
         window.attributes.screenBrightness.let {
             if (playerPreferences.rememberPlayerBrightness().get() && it != -1f) {
                 playerPreferences.playerBrightnessValue().set(it)
             }
         }
 
-        if (isInPictureInPictureMode) {
-            finishAndRemoveTask()
+        if (isInPictureInPictureMode && powerManager.isInteractive) {
+            viewModel.deletePendingEpisodes()
         }
 
-        player.shrinkCache()
         super.onStop()
     }
 
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        if (level >= TRIM_MEMORY_BACKGROUND || level == TRIM_MEMORY_RUNNING_CRITICAL) {
-            player.shrinkCache()
-        }
-    }
-
-    @SuppressLint("MissingSuperCall")
     override fun onUserLeaveHint() {
-        if (isPipSupportedAndEnabled && player.paused == false && playerPreferences.pipOnExit().get()) {
-            enterPictureInPictureMode(createPipParams())
+        if (isPipSupportedAndEnabled && viewModel.paused.value == false && playerPreferences.pipOnExit().get()) {
+            enterPictureInPictureMode()
         }
         super.onUserLeaveHint()
     }
 
+    // ANK -->
+    private fun backPressed() {
+        // ANK <--
+        if (isPipSupportedAndEnabled && viewModel.paused.value == false && playerPreferences.pipOnExit().get()) {
+            if (viewModel.sheetShown.value == Sheets.None &&
+                viewModel.panelShown.value == Panels.None &&
+                viewModel.dialogShown.value == Dialogs.None
+            ) {
+                enterPictureInPictureMode()
+            }
+            // ANK -->
+            return
+        }
 
+        // Default behavior: finish the activity
+        finish()
+        // ANK <--
+    }
 
     override fun onStart() {
         super.onStart()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && thermalListener != null) {
-            powerManager.addThermalStatusListener(thermalListener)
-        }
         setPictureInPictureParams(createPipParams())
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.setFlags(
@@ -492,7 +560,7 @@ class PlayerActivity : BaseActivity() {
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        binding.root.systemUiVisibility =
+        window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -514,234 +582,65 @@ class PlayerActivity : BaseActivity() {
                 if (it != -1f) viewModel.changeBrightnessTo(it)
             }
         }
+
+        // AM (DISCORD) -->
         updateDiscordRPC(exitingPlayer = false)
+        // <-- AM (DISCORD)
 
         castManager.apply {
+            // Register session listener cast
             registerSessionListener()
+
+            // Update current status of cast
             if (castState.value == CastManager.CastState.CONNECTED) {
                 updateCastState(CastManager.CastState.CONNECTED)
             }
+            // Synchronize initial status with viewmodel
             viewModel.isCasting.value = castState.value == CastManager.CastState.CONNECTED
         }
     }
 
-    private fun executeMPVCommand(commands: Array<String>) {
-        if (!player.isExiting) {
-            // ANZ -->
-            mpv.command(*commands)
-            // ANZ <--
+    private fun UniFile.writeText(text: String) {
+        this.openOutputStream().use {
+            it.write(text.toByteArray())
         }
     }
 
     private fun setupPlayerMPV() {
-        val logLevel = if (networkPreferences.verboseLogging().get()) "info" else "warn"
-
-        val configDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-            storageManager.getMPVConfigDirectory()!!.filePath!!
-        } else {
-            applicationContext.filesDir.path
-        }
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            runCatching {
-                val mpvConfFile = File("$configDir/mpv.conf")
-                advancedPlayerPreferences.mpvConf().get().let { mpvConfFile.writeText(it) }
-                val mpvInputFile = File("$configDir/input.conf")
-                advancedPlayerPreferences.mpvInput().get().let { mpvInputFile.writeText(it) }
-
-                copyScripts()
-                copyAssets(configDir)
-                copyFontsDirectory()
+        val mpvDir = UniFile.fromFile(applicationContext.filesDir)?.createDirectory(MPV_DIR)
+            ?: run {
+                logcat(LogPriority.ERROR) { "Failed to create MPV directory: $MPV_DIR in ${applicationContext.filesDir}" }
+                return
             }
-        }
 
-        // ANZ -->
+        val mpvConfFile = mpvDir.createFile("mpv.conf")!!
+        advancedPlayerPreferences.mpvConf().get().let { mpvConfFile.writeText(it) }
+        val mpvInputFile = mpvDir.createFile("input.conf")!!
+        advancedPlayerPreferences.mpvInput().get().let { mpvInputFile.writeText(it) }
+
+        // ANK -->
+        // mpv reads scripts/, script-opts/ and shaders/ during init, so it must not start while
+        // MpvConfig is midway through deleting and rewriting them.
+        val copied = runBlocking {
+            withTimeoutOrNull(MPV_COPY_AWAIT_TIMEOUT_MS.milliseconds) { mpvConfig.awaitCopy() } != null
+        }
+        if (!copied) {
+            logcat(LogPriority.WARN) { "Timed out waiting for the mpv config copy; initializing anyway" }
+        }
+        // ANK <--
+
         player.init(mpv)
-        viewModel.safeMpvCall {
-            it.setOptionString("sub-ass-force-margins", "yes")
-            it.setOptionString("sub-use-margins", "yes")
-            it.setOptionString("idle", "yes")
-            it.addLogObserver(playerObserver)
-            it.addObserver(playerObserver)
-        }
-        // ANZ <--
-    }
 
-    private fun ensureBridgeScript() {
-        val scriptsDir = File(applicationContext.filesDir, "scripts").apply { mkdirs() }
-        val luaFile = File(scriptsDir, "aniyomi.lua")
-        try {
-            assets.open("aniyomi.lua").use { luaAsset ->
-                luaFile.outputStream().use { luaOut ->
-                    luaAsset.copyTo(luaOut)
-                }
-            }
-        } catch (e: Exception) {
-            logcat(LogPriority.ERROR, e) { "Failed to copy aniyomi.lua bridge" }
-        }
-    }
-
-    private fun copyScripts() {
-        ensureBridgeScript()
-        if (!advancedPlayerPreferences.mpvScripts().get()) return
-
-        val scriptsDir = File(applicationContext.filesDir, "scripts").apply { mkdirs() }
-        val scriptOptsDir = File(applicationContext.filesDir, "script-opts").apply { mkdirs() }
-
-        storageManager.getScriptsDirectory()?.listFiles()?.forEach { file ->
-            val name = file.name ?: return@forEach
-            if (name == "aniyomi.lua" || name == "custombuttons.lua") return@forEach
-            val outFile = File(scriptsDir, name)
-            try {
-                file.openInputStream().use { input ->
-                    outFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Failed to copy script: $name" }
-            }
-        }
-        storageManager.getScriptOptsDirectory()?.listFiles()?.forEach { file ->
-            val name = file.name ?: return@forEach
-            val outFile = File(scriptOptsDir, name)
-            try {
-                file.openInputStream().use { input ->
-                    outFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Failed to copy script opt: $name" }
-            }
-        }
-    }
-
-    private fun copyAssets(configDir: String) {
-        val assetManager = this.assets
-        // ANZ -->
-        val existingAssets = runCatching { assetManager.list("")?.toSet() }.getOrNull() ?: emptySet()
-        val files = arrayOf("subfont.ttf").filter { it in existingAssets }
-        // ANZ <--
-        for (filename in files) {
-            var ins: InputStream? = null
-            var out: OutputStream? = null
-            try {
-                ins = assetManager.open(filename, AssetManager.ACCESS_STREAMING)
-                val outFile = File("$configDir/$filename")
-                // Note that .available() officially returns an *estimated* number of bytes available
-                // this is only true for generic streams, asset streams return the full file size
-                if (outFile.length() == ins.available().toLong()) {
-                    logcat(LogPriority.VERBOSE) { "Skipping copy of asset file (exists same size): $filename" }
-                    continue
-                }
-                out = FileOutputStream(outFile)
-                ins.copyTo(out)
-                logcat(LogPriority.WARN) { "Copied asset file: $filename" }
-            } catch (e: IOException) {
-                logcat(LogPriority.ERROR, e) { "Failed to copy asset file: $filename" }
-            } finally {
-                ins?.close()
-                out?.close()
-            }
-        }
-    }
-
-    private fun copyFontsDirectory() {
-        // Optimized font copying: checks if file exists and size matches to avoid startup lag
-        // TODO: Ideally we should let MPV directly access the directory, but SAF makes it hard.
-        // ANZ -->
-        lifecycleScope.launch(Dispatchers.IO) {
-            val fontsDir = storageManager.getFontsDirectory()
-            if (fontsDir != null) {
-                val destDir = applicationContext.filesDir
-                fontsDir.listFiles()?.forEach { font ->
-                    val destFile = java.io.File(destDir, font.name)
-                    if (!destFile.exists() || destFile.length() != font.length()) {
-                        try {
-                            font.openInputStream().use { input ->
-                                destFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            logcat(LogPriority.ERROR, e) { "Failed to copy font: ${font.name}" }
-                        }
-                    }
-                }
-            }
-            viewModel.safeMpvCall { mpv ->
-                mpv.setPropertyString(
-                    "sub-fonts-dir",
-                    applicationContext.filesDir.path,
-                )
-                mpv.setPropertyString(
-                    "osd-fonts-dir",
-                    applicationContext.filesDir.path,
-                )
-            }
-        }
-        // ANZ <--
-    }
-
-    fun setupCustomButtons(buttons: List<CustomButton>) {
-        if (buttons.isEmpty()) return
-        // ANZ -->
-        lifecycleScope.launch(Dispatchers.IO) {
-            ensureBridgeScript()
-            val scriptsDir = File(applicationContext.filesDir, "scripts").apply { mkdirs() }
-            val primaryButtonId = viewModel.primaryButton.value?.id ?: 0L
-
-            val customButtonsContent = buildString {
-                appendLine(
-                    """
-                        local scripts_dir = '${scriptsDir.absolutePath.replace("\\", "/")}'
-                        package.path = package.path .. ';' .. scripts_dir .. '/?.lua;' .. scripts_dir .. '/?/init.lua'
-                        local lua_modules = mp.find_config_file('scripts')
-                        if lua_modules then
-                            package.path = package.path .. ';' .. lua_modules .. '/?.lua;' .. lua_modules .. '/?/init.lua'
-                        end
-                        local aniyomi = require 'aniyomi'
-                    """.trimIndent(),
-                )
-                appendLine()
-
-                buttons.forEach { button ->
-                    appendLine(button.getButtonOnStartup(primaryButtonId))
-                    appendLine(
-                        """
-                            function button${button.id}()
-                                ${button.getButtonContent(primaryButtonId)}
-                            end
-                            mp.register_script_message('call_button_${button.id}', button${button.id})
-                            function button${button.id}long()
-                                ${button.getButtonLongPressContent(primaryButtonId)}
-                            end
-                            mp.register_script_message('call_button_${button.id}_long', button${button.id}long)
-                        """.trimIndent(),
-                    )
-                    appendLine()
-                }
-            }
-
-            val file = File(scriptsDir, "custombuttons.lua")
-            try {
-                file.writeText(customButtonsContent)
-                viewModel.safeMpvCall { mpv ->
-                    mpv.command("load-script", file.absolutePath)
-                }
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Failed to write or load custombuttons.lua" }
-            }
-        }
-        // ANZ <--
+        val showBlackBars = if (subtitlePreferences.subtitleBlackBars().get()) "yes" else "no"
+        mpv.setOptionString("sub-ass-force-margins", showBlackBars)
+        mpv.setOptionString("sub-use-margins", showBlackBars)
+        mpv.addLogObserver(playerObserver)
+        mpv.addObserver(playerObserver)
     }
 
     private fun setupPlayerAudio() {
         with(audioPreferences) {
-            // ANZ -->
             audioChannels().get().let { mpv.setPropertyString(it.property, it.value) }
-            // ANZ <--
 
             val request = AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN).also {
                 it.setAudioAttributes(
@@ -763,7 +662,7 @@ class PlayerActivity : BaseActivity() {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             -> {
                 val oldRestore = restoreAudioFocus
-                val wasPlayerPaused = player.paused ?: false
+                val wasPlayerPaused = viewModel.paused.value ?: false
                 viewModel.pause()
                 restoreAudioFocus = {
                     oldRestore()
@@ -772,12 +671,10 @@ class PlayerActivity : BaseActivity() {
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // ANZ -->
                 mpv.command("multiply", "volume", "0.5")
                 restoreAudioFocus = {
                     mpv.command("multiply", "volume", "2")
                 }
-                // ANZ <--
             }
 
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -792,16 +689,15 @@ class PlayerActivity : BaseActivity() {
     }
 
     override fun onResume() {
-        if (player.initialized && player.paused == false) {
-            player.restoreCache()
-        }
-        // Reconectar Cast si estaba activo
+        // Reconnect cast if it was active
         castManager.apply {
             reconnect()
             registerSessionListener()
         }
 
+        // AM (DISCORD) -->
         updateDiscordRPC(exitingPlayer = false)
+        // <-- AM (DISCORD)
 
         if (!player.isExiting) {
             super.onResume()
@@ -820,7 +716,7 @@ class PlayerActivity : BaseActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         if (!isInPictureInPictureMode) {
-            viewModel.restoreAspectRatio()
+            viewModel.changeVideoAspect(playerPreferences.aspectState().get())
         } else {
             viewModel.hideControls()
         }
@@ -834,198 +730,92 @@ class PlayerActivity : BaseActivity() {
     // A bunch of observers
 
     internal fun onObserverEvent(property: String, value: Long) {
-        if (player.isExiting || !player.initialized) return
+        if (player.isExiting) return
+        // ANZ -->
         when (property) {
-            "video-params/w" -> PlayerStats.videoW.value = value
-            "video-params/h" -> {
-                PlayerStats.videoH.value = value
-                viewModel.restoreAspectRatio()
-            }
-            "video-out-params/w" -> PlayerStats.videoOutW.value = value
-            "video-out-params/h" -> PlayerStats.videoOutH.value = value
-            "dwidth" -> PlayerStats.dwidth.value = value
-            "dheight" -> PlayerStats.dheight.value = value
-            "video-bitrate" -> PlayerStats.videoBitrate.value = value
-            "vo-delayed-frame-count" -> {
-                PlayerStats.delayedFrames.value = value
-                player.checkAdaptiveScaling(value)
-            }
-            "vo-passes" -> PlayerStats.voPasses.value = value
-            "paused-for-cache" -> {
-                viewModel.pausedForCache.update { value == 1L }
-                viewModel.isLoading.update { value == 1L }
-            }
-            "core-idle" -> {
-                viewModel.coreIdle.update { value == 1L }
-            }
-            "time-pos" -> {
-                if (!viewModel.isSeekingUI.value) {
-                    viewModel.updatePlayBackPos(value.toFloat())
-                    viewModel.setChapter(value.toFloat())
-                }
-            }
-            "demuxer-cache-time" -> viewModel.updateReadAhead(value = value)
-            "volume" -> viewModel.setMPVVolume(value.toInt())
-            "volume-max" -> viewModel.volumeBoostCap = value.toInt() - 100
-            // "chapter" -> viewModel.updateChapter(value)
-            "duration" -> viewModel.duration.update { value.toFloat() }
-            "user-data/current-anime/intro-length" -> viewModel.setAnimeSkipIntroLength(value)
+            "vo-delayed-frame-count" -> player.checkAdaptiveScaling(value)
         }
+        // ANZ <--
     }
 
+    @Suppress("unused")
     internal fun onObserverEvent(property: String) {
-        if (player.isExiting || !player.initialized) return
-        when (property) {
-            "paused-for-cache" -> {
-                val value = player.pausedForCache ?: false
-                viewModel.pausedForCache.update { value }
-                viewModel.isLoading.update { value }
-            }
-            "core-idle" -> {
-                val value = player.coreIdle ?: false
-                viewModel.coreIdle.update { value }
-            }
-            // ANZ -->
-            "chapter-list" -> {
-                lifecycleScope.launchIO {
-                    viewModel.loadChapters()
-                    viewModel.updateChapter(0)
-                }
-            }
-            "track-list" -> viewModel.loadTracks()
-            // ANZ <--
-        }
+        if (player.isExiting) return
     }
 
     internal fun onObserverEvent(property: String, value: Boolean) {
-        if (player.isExiting || !player.initialized) return
+        if (player.isExiting) return
         when (property) {
-            "interpolation" -> PlayerStats.isInterpolating.value = value
-            "pause" -> {
-                if (value && player.paused == true) {
-                    viewModel.pause()
-                    runOnUiThread {
-                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        if (isPipSupportedAndEnabled) {
-                            runCatching {
-                                setPictureInPictureParams(createPipParams())
-                            }
-                        }
-                    }
-                } else if (!value && player.paused == false) {
-                    viewModel.unpause()
-                    runOnUiThread {
-                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        if (isPipSupportedAndEnabled) {
-                            runCatching {
-                                setPictureInPictureParams(createPipParams())
-                            }
-                        }
-                    }
-                }
+            "pause" if value -> {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+                // ANK -->
                 updateDiscordRPC(exitingPlayer = false)
+                // ANK <--
             }
+            "pause" -> {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-            "paused-for-cache" -> {
-                viewModel.pausedForCache.update { value }
-                viewModel.isLoading.update { value }
+                // ANK -->
+                updateDiscordRPC(exitingPlayer = false)
+                // ANK <--
             }
-
-            "core-idle" -> {
-                viewModel.coreIdle.update { value }
-            }
-
-            "seeking" -> {
-                viewModel.isLoading.update { value }
-            }
-
-            "eof-reached" -> {
-                endFile(value)
-            }
-        }
-    }
-
-    val trackId: (String) -> Int? = {
-        when (it) {
-            "auto" -> null
-            "no" -> -1
-            else -> it.toInt()
+            "eof-reached" -> endFile(value)
         }
     }
 
     internal fun onObserverEvent(property: String, value: String) {
-        if (player.isExiting || !player.initialized) return
-        when (property) {
-            "video-sync" -> PlayerStats.videoSync.value = value
-            "tscale" -> PlayerStats.tscale.value = value
-            "video-codec" -> PlayerStats.videoCodec.value = value
-            "video-params/pixelformat" -> PlayerStats.videoPixFmt.value = value
-            "video-params/colorlevels" -> PlayerStats.videoLevels.value = value
-            "video-params/primaries" -> PlayerStats.videoPrimaries.value = value
-            "hwdec-current" -> PlayerStats.hwdec.value = value
-        }
+        if (player.isExiting) return
         when (property.substringBeforeLast("/")) {
-            "aid" -> trackId(value)?.let { viewModel.updateAudio(it) }
-            "sid" -> trackId(value)?.let { viewModel.updateSubtitle(it, viewModel.selectedSubtitles.value.second) }
-            "secondary-sid" -> trackId(value)?.let {
-                viewModel.updateSubtitle(viewModel.selectedSubtitles.value.first, it)
-            }
-            "hwdec", "hwdec-current" -> viewModel.getDecoder()
             "user-data/aniyomi" -> viewModel.handleLuaInvocation(property, value)
         }
     }
 
-    @SuppressLint("NewApi")
+    @Suppress("unused")
     internal fun onObserverEvent(property: String, value: Double) {
-        if (player.isExiting || !player.initialized) return
+        if (player.isExiting) return
         when (property) {
-            "speed" -> viewModel.playbackSpeed.update { value.toFloat() }
-            "video-zoom" -> viewModel.videoZoom.update { value.toFloat() }
-            "video-pan-x" -> viewModel.videoPanX.update { value.toFloat() }
-            "video-pan-y" -> viewModel.videoPanY.update { value.toFloat() }
-            "estimated-vf-fps" -> PlayerStats.estimatedVfFps.value = value
-            "video-params/fps" -> PlayerStats.videoParamsFps.value = value
-            "fps" -> if (PlayerStats.videoParamsFps.value == 0.0) PlayerStats.videoParamsFps.value = value
-            "video-out-params/fps" -> PlayerStats.videoOutParamsFps.value = value
-            "container-fps" -> PlayerStats.containerFps.value = value
-            "display-fps", "override-display-fps" -> PlayerStats.displayFps.value = value
-            "estimated-display-fps" -> PlayerStats.estimatedDisplayFps.value = value
-            "mistime" -> PlayerStats.mistime.value = value
-            "video-params/aspect" -> if (isPipSupportedAndEnabled) runOnUiThread { runCatching { setPictureInPictureParams(createPipParams()) } }
+            "video-params/aspect" -> if (isPipSupportedAndEnabled) createPipParams()
         }
     }
 
-    // ANZ -->
+    @Suppress("unused")
     internal fun onObserverEvent(property: String, value: MPVNode) {
+        if (player.isExiting) return
     }
 
     internal fun event(eventId: Int, node: MPVNode) {
         if (player.isExiting) return
         when (eventId) {
             MPV.mpvEvent.MPV_EVENT_FILE_LOADED -> {
-                PlayerStats.isAdaptiveDowngraded.value = false
                 viewModel.viewModelScope.launchIO { fileLoaded() }
             }
-            MPV.mpvEvent.MPV_EVENT_SEEK -> viewModel.isLoading.update { true }
-            MPV.mpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
-                player.isExiting = false
-                viewModel.restoreAspectRatio()
-            }
+            MPV.mpvEvent.MPV_EVENT_PLAYBACK_RESTART -> player.isExiting = false
             MPV.mpvEvent.MPV_EVENT_END_FILE -> {
                 val errorNode = node.asMap()?.get("file_error") ?: return
-                var errorMessage = errorNode.asString() ?: return
+                var errorMessage = errorNode.asString() ?: "Error: File ended"
 
                 val httpError = playerObserver.httpError
                 if (!httpError.isNullOrEmpty()) {
                     errorMessage += ": $httpError"
                     playerObserver.httpError = null
                 }
-                onVideoError(errorMessage)
+
+                logcat(LogPriority.ERROR) { errorMessage }
+                showToast(errorMessage)
+
+                viewModel.setCurrentVideoError()
+
+                if (playerPreferences.switchOnFailure().get()) {
+                    if (!viewModel.loadBestVideo()) {
+                        finish()
+                    }
+                } else {
+                    viewModel.setIsStopped(true)
+                }
             }
         }
     }
-    // ANZ <--
 
     fun createPipParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
@@ -1039,25 +829,23 @@ class PlayerActivity : BaseActivity() {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val autoEnter = playerPreferences.pipOnExit().get()
-            builder.setAutoEnterEnabled(player.paused == false && autoEnter)
-            builder.setSeamlessResizeEnabled(player.paused == false && autoEnter)
+            builder.setAutoEnterEnabled(viewModel.paused.value == false && autoEnter)
+            builder.setSeamlessResizeEnabled(viewModel.paused.value == false && autoEnter)
         }
         builder.setActions(
             createPipActions(
                 context = this,
-                isPaused = player.paused ?: true,
+                isPaused = viewModel.paused.value ?: true,
                 replaceWithPrevious = playerPreferences.pipReplaceWithPrevious().get(),
                 playlistCount = viewModel.currentPlaylist.value.size,
                 playlistPosition = viewModel.getCurrentEpisodeIndex(),
             ),
         )
         builder.setSourceRectHint(pipRect)
-        player.videoH?.let { height ->
-            player.getVideoOutAspect()?.let { aspect ->
-                val width = height * aspect
-                val rational = Rational(height, width.toInt()).toFloat()
-                if (rational in 0.42..2.38) builder.setAspectRatio(Rational(width.toInt(), height))
-            }
+        mpv.getPropertyInt("video-params/h")?.let { height ->
+            val width = height * player.getVideoOutAspect()!!
+            val rational = Rational(height, width.toInt()).toFloat()
+            if (rational in 0.42..2.38) builder.setAspectRatio(Rational(width.toInt(), height))
         }
         return builder.build()
     }
@@ -1065,18 +853,12 @@ class PlayerActivity : BaseActivity() {
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         if (!isInPictureInPictureMode) {
-            player.restoreCache()
             pipReceiver?.let {
                 unregisterReceiver(pipReceiver)
                 pipReceiver = null
             }
         } else {
-            if (!isFinishing && !isDestroyed) {
-                try {
-                    setPictureInPictureParams(createPipParams())
-                } catch (_: Exception) {
-                }
-            }
+            setPictureInPictureParams(createPipParams())
             viewModel.hideControls()
             viewModel.hideSeekBar()
             viewModel.isBrightnessSliderShown.update { false }
@@ -1092,12 +874,7 @@ class PlayerActivity : BaseActivity() {
                         PIP_PREVIOUS -> viewModel.changeEpisode(true)
                         PIP_SKIP -> viewModel.seekBy(10)
                     }
-                    if (!isFinishing && !isDestroyed) {
-                        try {
-                            setPictureInPictureParams(createPipParams())
-                        } catch (_: Exception) {
-                        }
-                    }
+                    setPictureInPictureParams(createPipParams())
                 }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -1130,124 +907,35 @@ class PlayerActivity : BaseActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        val hasOverlayPopup = viewModel.sheetShown.value != Sheets.None ||
-            viewModel.panelShown.value != Panels.None ||
-            viewModel.dialogShown.value != Dialogs.None
-
-        if (hasOverlayPopup) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> {
-                    viewModel.changeVolumeBy(1)
-                    viewModel.displayVolumeSlider()
-                    return true
-                }
-                KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                    viewModel.changeVolumeBy(-1)
-                    viewModel.displayVolumeSlider()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_STOP -> {
-                    finishAndRemoveTask()
-                    return true
-                }
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                    viewModel.pauseUnpause()
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_DPAD_UP,
-                KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER,
-                KeyEvent.KEYCODE_TAB -> {
-                    // Let Compose UI handle directional focus traversal and selections in dialogs/sheets
-                    return super.onKeyDown(keyCode, event)
-                }
-                else -> {
-                    event?.let { player.onKey(it) }
-                    return super.onKeyDown(keyCode, event)
-                }
-            }
-        }
-
         when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> {
                 viewModel.changeVolumeBy(1)
                 viewModel.displayVolumeSlider()
-                return true
             }
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
                 viewModel.changeVolumeBy(-1)
                 viewModel.displayVolumeSlider()
-                return true
             }
-            KeyEvent.KEYCODE_MEDIA_STOP -> {
-                finishAndRemoveTask()
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                viewModel.handleLeftDoubleTap()
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_RIGHT,
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                viewModel.handleRightDoubleTap()
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN,
-            KeyEvent.KEYCODE_MENU -> {
-                if (viewModel.controlsShown.value) {
-                    return super.onKeyDown(keyCode, event)
-                } else {
-                    viewModel.showControls()
-                    return true
-                }
-            }
-            KeyEvent.KEYCODE_DPAD_CENTER,
-            KeyEvent.KEYCODE_ENTER,
-            KeyEvent.KEYCODE_NUMPAD_ENTER,
-            KeyEvent.KEYCODE_SPACE,
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                viewModel.pauseUnpause()
-                if (viewModel.paused.value) {
-                    viewModel.showControls()
-                }
-                return true
-            }
-            KeyEvent.KEYCODE_TAB -> {
-                return super.onKeyDown(keyCode, event)
-            }
+            KeyEvent.KEYCODE_DPAD_LEFT -> viewModel.handleLeftDoubleTap()
+            KeyEvent.KEYCODE_DPAD_RIGHT -> viewModel.handleRightDoubleTap()
+            KeyEvent.KEYCODE_SPACE -> viewModel.pauseUnpause()
+            KeyEvent.KEYCODE_MEDIA_STOP -> finishAndRemoveTask()
+
+            KeyEvent.KEYCODE_MEDIA_REWIND -> viewModel.handleLeftDoubleTap()
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> viewModel.handleRightDoubleTap()
+
             // other keys should be bound by the user in input.conf ig
             else -> {
                 event?.let { player.onKey(it) }
-                return super.onKeyDown(keyCode, event)
+                super.onKeyDown(keyCode, event)
             }
         }
+        return true
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_DPAD_RIGHT,
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN,
-            KeyEvent.KEYCODE_DPAD_CENTER,
-            KeyEvent.KEYCODE_ENTER,
-            KeyEvent.KEYCODE_NUMPAD_ENTER,
-            KeyEvent.KEYCODE_TAB,
-            KeyEvent.KEYCODE_BACK -> {
-                // Keep D-Pad and navigation keys within Android / Compose UI lifecycle
-                return super.onKeyUp(keyCode, event)
-            }
-            else -> {
-                if (event != null && player.onKey(event)) return true
-                return super.onKeyUp(keyCode, event)
-            }
-        }
+        if (player.onKey(event!!)) return true
+        return super.onKeyUp(keyCode, event)
     }
 
     private fun setupMediaSession() {
@@ -1268,9 +956,7 @@ class PlayerActivity : BaseActivity() {
                                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             }
                             SingleActionGesture.Custom -> {
-                                // ANZ -->
                                 mpv.command("keypress", CustomKeyCodes.MediaPlay.keyCode)
-                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> {}
@@ -1280,11 +966,12 @@ class PlayerActivity : BaseActivity() {
                     override fun onPause() {
                         // Cast -->
                         castManager.apply {
+                            // Release resources only if not in PIP
                             if (!isInPictureInPictureMode) {
                                 unregisterSessionListener()
                             }
 
-                            // Si está transmitiendo, mantener sesión activa
+                            // If you are transmitting, keep an active session
                             if (castState.value == CastManager.CastState.CONNECTED) {
                                 maintainCastSessionBackground()
                             }
@@ -1299,9 +986,7 @@ class PlayerActivity : BaseActivity() {
                                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             }
                             SingleActionGesture.Custom -> {
-                                // ANZ -->
                                 mpv.command("keypress", CustomKeyCodes.MediaPlay.keyCode)
-                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> {}
@@ -1318,9 +1003,7 @@ class PlayerActivity : BaseActivity() {
                                 viewModel.pauseUnpause()
                             }
                             SingleActionGesture.Custom -> {
-                                // ANZ -->
                                 mpv.command("keypress", CustomKeyCodes.MediaPrevious.keyCode)
-                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> viewModel.changeEpisode(true)
@@ -1337,9 +1020,7 @@ class PlayerActivity : BaseActivity() {
                                 viewModel.pauseUnpause()
                             }
                             SingleActionGesture.Custom -> {
-                                // ANZ -->
                                 mpv.command("keypress", CustomKeyCodes.MediaNext.keyCode)
-                                // ANZ <--
                             }
 
                             SingleActionGesture.Switch -> viewModel.changeEpisode(false)
@@ -1381,11 +1062,6 @@ class PlayerActivity : BaseActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    override fun finishAndRemoveTask() {
-        viewModel.deletePendingEpisodes()
-        super.finishAndRemoveTask()
-    }
-
     /**
      * Switches to the episode based on [episodeId],
      * @param episodeId id of the episode to switch the player to
@@ -1397,65 +1073,52 @@ class PlayerActivity : BaseActivity() {
         viewModel.pause()
         viewModel.clearTracks()
         viewModel.isLoading.update { _ -> true }
-        viewModel.setIsStopped(false)
-        viewModel.resetState()
+        viewModel.resetHosterState()
 
         lifecycleScope.launch {
-            try {
-                viewModel.updateIsLoadingEpisode(true)
-                viewModel.updateIsLoadingHosters(true)
-                viewModel.cancelHosterVideoLinksJob()
+            viewModel.updateIsLoadingEpisode(true)
+            viewModel.updateIsLoadingHosters(true)
+            viewModel.cancelHosterVideoLinksJob()
 
-                val pipEpisodeToasts = playerPreferences.pipEpisodeToasts().get()
-                val switchMethod = viewModel.loadEpisode(episodeId)
+            val pipEpisodeToasts = playerPreferences.pipEpisodeToasts().get()
+            val switchMethod = viewModel.loadEpisode(episodeId)
 
-                viewModel.updateIsLoadingHosters(false)
+            viewModel.updateIsLoadingHosters(false)
 
-                when (switchMethod) {
-                    null -> {
-                        if (viewModel.currentAnime.value != null && !autoPlay) {
-                            launchUI { toast(MR.strings.no_next_episode) }
+            when (switchMethod) {
+                null -> {
+                    if (viewModel.currentAnime.value != null && !autoPlay) {
+                        launchUI { toast(MR.strings.no_next_episode) }
+                    }
+                    viewModel.isLoading.update { _ -> false }
+                }
+
+                else -> {
+                    if (switchMethod.hosterList != null) {
+                        when {
+                            switchMethod.hosterList.isEmpty() -> setInitialEpisodeError(
+                                PlayerViewModel.ExceptionWithStringResource(
+                                    "Hoster list is empty",
+                                    MR.strings.no_hosters,
+                                ),
+                            )
+                            else -> {
+                                viewModel.loadHosters(
+                                    source = switchMethod.source,
+                                    hosterList = switchMethod.hosterList,
+                                    hosterIndex = -1,
+                                    videoIndex = -1,
+                                )
+                            }
                         }
-                        viewModel.isLoading.update { _ -> false }
-                        viewModel.updateIsLoadingEpisode(false)
+                    } else {
+                        logcat(LogPriority.ERROR) { "Error getting links" }
                     }
 
-                    else -> {
-                        if (switchMethod.hosterList != null) {
-                            when {
-                                switchMethod.hosterList.isEmpty() -> setInitialEpisodeError(
-                                    PlayerViewModel.ExceptionWithStringResource(
-                                        "Hoster list is empty",
-                                        MR.strings.no_hosters,
-                                    ),
-                                )
-
-                                else -> {
-                                    viewModel.loadHosters(
-                                        source = switchMethod.source,
-                                        hosterList = switchMethod.hosterList,
-                                        hosterIndex = -1,
-                                        videoIndex = -1,
-                                    )
-                                }
-                            }
-                        } else {
-                            logcat(LogPriority.ERROR) { "Error getting links" }
-                            viewModel.isLoading.update { _ -> false }
-                            viewModel.updateIsLoadingEpisode(false)
-                            viewModel.setIsStopped(true)
-                        }
-
-                        if (isInPictureInPictureMode && pipEpisodeToasts) {
-                            launchUI { toast(switchMethod.episodeTitle) }
-                        }
+                    if (isInPictureInPictureMode && pipEpisodeToasts) {
+                        launchUI { toast(switchMethod.episodeTitle) }
                     }
                 }
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Error switching episode" }
-                viewModel.updateIsLoadingEpisode(false)
-                viewModel.isLoading.value = false
-                viewModel.setIsStopped(true)
             }
         }
 
@@ -1471,105 +1134,144 @@ class PlayerActivity : BaseActivity() {
         if (player.isExiting) return
         if (video == null) return
 
-        if (!player.initialized) {
-            player.queueOrPlayVideo(video, position) { v, pos ->
-                runOnUiThread { setVideo(v, pos) }
+        viewModel.setIsStopped(false)
+        setHttpOptions(video)
+
+        if (viewModel.isLoadingEpisode.value) {
+            viewModel.currentEpisode.value?.let { episode ->
+                val preservePos = playerPreferences.preserveWatchingPosition().get()
+                val resumePosition = position
+                    ?: if (episode.seen && !preservePos) {
+                        0L
+                    } else {
+                        episode.last_second_seen
+                    }
+                mpv.command("set", "start", "${resumePosition / 1000F}")
             }
-            return
+        } else {
+            viewModel.pos.value?.let {
+                mpv.command("set", "start", "$it")
+            }
         }
 
         // ANZ -->
         val serverToStop = httpServer
         httpServer = null
-
-        val episode = viewModel.currentEpisode.value
-        val preservePos = playerPreferences.preserveWatchingPosition().get()
-        val resumePosition = position
-            ?: if (episode?.seen == true && !preservePos) {
-                0L
-            } else {
-                episode?.last_second_seen
-            }
-        val isTvMode = isTv
-        val isEpisodeLoading = viewModel.isLoadingEpisode.value
-        val playerTimePos = player.timePos
-
-        launchIO {
-            if (serverToStop != null) {
+        if (serverToStop != null) {
+            lifecycleScope.launchIO {
                 runCatching { serverToStop.stop() }
-            }
-
-            setHttpOptions(video)
-
-            // Set mime-type for TV or if provided
-            val mime = video.mimeType ?: if (isTvMode) "video/mp4" else null
-            mime?.let {
-                viewModel.safeMpvCall { mpv -> mpv.setOptionString("android-mime-type", it) }
-            }
-
-            if (isEpisodeLoading) {
-                if (resumePosition != null) {
-                    viewModel.safeMpvCall { mpv -> mpv.command("set", "start", "${resumePosition / 1000F}") }
-                }
-            } else {
-                playerTimePos?.let {
-                    viewModel.safeMpvCall { mpv -> mpv.command("set", "start", "$it") }
-                }
-            }
-
-            if (video.videoUrl.startsWith(TorrentServerUtils.hostUrl) ||
-                video.videoUrl.startsWith("magnet") ||
-                video.videoUrl.endsWith(".torrent")
-            ) {
-                TorrentServerService.start()
-                TorrentServerService.wait(10)
-                torrentLinkHandler(video.videoUrl, video.quality)
-            } else {
-                val httpSource = viewModel.currentSource.value as? AnimeHttpSource
-                var videoUrl: String = video.videoUrl
-                if (video.usesHttpServer() && httpSource != null) {
-                    val port = try {
-                        httpServer = httpSource.createHttpServer()
-                        httpServer?.start()
-                        httpServer?.listeningPort ?: 0
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR, e) { "Failed to start http server" }
-                        return@launchIO
-                    }
-
-                    val newVideo = video.copyHttpServer(port)
-                    videoUrl = newVideo.videoUrl
-                    viewModel.updateVideo(newVideo)
-                }
-
-                // Atomic Audio-File Injection: If separate external audio tracks exist, mount them at loadfile time
-                val externalAudio = video.audioTracks.firstOrNull()?.url
-                if (!externalAudio.isNullOrBlank()) {
-                    val parsedAudioUrl = parseVideoUrl(externalAudio)
-                    if (!parsedAudioUrl.isNullOrBlank()) {
-                        viewModel.safeMpvCall { mpv -> mpv.setOptionString("audio-file", parsedAudioUrl) }
-                        logcat { "Player: Mounted atomic audio-file at loadfile time: $parsedAudioUrl" }
-                    }
-                }
-
-                viewModel.safeMpvCall { mpv -> mpv.command("loadfile", parseVideoUrl(videoUrl) ?: videoUrl) }
             }
         }
         // ANZ <--
+
+        if (video.videoUrl.startsWith(TorrentServerUtils.hostUrl) ||
+            video.videoUrl.startsWith("magnet") ||
+            video.videoUrl.endsWith(".torrent")
+        ) {
+            launchIO {
+                TorrentServerService.start()
+                TorrentServerService.wait(10)
+                // ANK -->
+                torrentLinkHandler(video.videoUrl, video.videoTitle, video.mpvArgs)
+                // ANK <--
+            }
+        } else {
+            // ANZ -->
+            val httpSource = viewModel.currentSource.value as? AnimeHttpSource
+            var videoUrl: String = video.videoUrl
+            if (video.usesHttpServer() && httpSource != null) {
+                val port = try {
+                    httpServer = httpSource.createHttpServer()
+                    httpServer?.start()
+                    httpServer?.listeningPort ?: 0
+                } catch (e: Exception) {
+                    logcat(LogPriority.ERROR, e) { "Failed to start http server" }
+                    return
+                }
+                val newVideo = video.copyHttpServer(port)
+                videoUrl = newVideo.videoUrl
+                viewModel.updateVideo(newVideo)
+            }
+            loadFile(parseVideoUrl(videoUrl)!!, video.mpvArgs)
+            // ANZ <--
+        }
+
+        // AM (DISCORD) -->
         updateDiscordRPC(exitingPlayer = false)
+        // <-- AM (DISCORD)
     }
 
-    private fun torrentLinkHandler(videoUrl: String, quality: String) {
+    // ANK -->
+    /**
+     * Issues a `loadfile` for [url], appending the per-file options that have to apply no matter
+     * which branch started the load. Keeping this in one place is what stops the torrent path from
+     * inheriting the previous file's `sid`/`aid`.
+     */
+    private fun loadFile(url: String, mpvArgs: List<Pair<String, String>> = emptyList()) {
+        // We handle selecting these in the viewmodel
+        val forcedOptions = listOf(
+            Pair("sid", "no"),
+            Pair("aid", "no"),
+        )
+
+        mpv.command(
+            "loadfile",
+            url,
+            "replace",
+            "0",
+            formatMpvOptions(mpvArgs + forcedOptions),
+        )
+    }
+
+    /**
+     * Formats [options] for the `options` argument of `loadfile`.
+     *
+     * mpv parses that argument as its own `key=value` list and never hands it to a shell, so the
+     * FFmpeg sanitizers must not be reused here: they reject values mpv accepts (`$`, `(`, `\`, or
+     * anything starting with `-`) and they *throw*, which would tear down the event collector that
+     * calls [setVideo] -- or crash the app outright from [torrentLinkHandler]'s coroutine.
+     *
+     * Any value the list syntax itself would otherwise eat -- one holding a `,`, a quote, or
+     * whitespace -- is emitted with mpv's `%<bytes>%<value>` escaping. Quoting cannot do the job:
+     * mpv's quoted form ends at the first `"` and has no escape for a literal one, so a value
+     * containing a quote used to produce an unparsable list and lose every option in it. Option
+     * names are validated rather than escaped, since a name mpv could not accept is a mistake in
+     * the extension either way.
+     */
+    private fun formatMpvOptions(options: List<Pair<String, String>>): String {
+        val (valid, invalid) = options.partition { (option, _) -> MPV_OPTION_NAME_REGEX.matches(option) }
+
+        invalid.forEach { (option, _) ->
+            logcat(LogPriority.WARN) { "Ignoring mpv option with unusable name: $option" }
+        }
+
+        return valid.joinToString(",") { (option, value) ->
+            if (MPV_PLAIN_OPTION_VALUE_REGEX.matches(value)) {
+                "$option=$value"
+            } else {
+                "$option=%${value.toByteArray().size}%$value"
+            }
+        }
+    }
+    // ANK <--
+
+    private fun torrentLinkHandler(
+        videoUrl: String,
+        quality: String,
+        // ANK -->
+        mpvArgs: List<Pair<String, String>> = emptyList(),
+        // ANK <--
+    ) {
         var index = 0
 
         // check if link is from localSource
         if (videoUrl.startsWith("content://")) {
-            val videoInputStream = applicationContext.contentResolver.openInputStream(Uri.parse(videoUrl))
+            val videoInputStream = applicationContext.contentResolver.openInputStream(videoUrl.toUri())
             val torrent = TorrentServerApi.uploadTorrent(videoInputStream!!, quality, "", "", false)
             val torrentUrl = TorrentServerUtils.getTorrentPlayLink(torrent, 0)
-            // ANZ -->
-            viewModel.safeMpvCall { mpv -> mpv.command("loadfile", torrentUrl) }
-            // ANZ <--
+            // ANK -->
+            loadFile(torrentUrl, mpvArgs)
+            // ANK <--
             return
         }
 
@@ -1578,7 +1280,7 @@ class PlayerActivity : BaseActivity() {
             if (videoUrl.contains("index=")) {
                 index = try {
                     videoUrl.substringAfter("index=").toInt()
-                } catch (e: NumberFormatException) {
+                } catch (_: NumberFormatException) {
                     0
                 }
             }
@@ -1586,9 +1288,9 @@ class PlayerActivity : BaseActivity() {
 
         val currentTorrent = TorrentServerApi.addTorrent(videoUrl, quality, "", "", false)
         val videoTorrentUrl = TorrentServerUtils.getTorrentPlayLink(currentTorrent, index)
-        // ANZ -->
-        viewModel.safeMpvCall { mpv -> mpv.command("loadfile", videoTorrentUrl) }
-        // ANZ <--
+        // ANK -->
+        loadFile(videoTorrentUrl, mpvArgs)
+        // ANK <--
     }
 
     /**
@@ -1596,8 +1298,6 @@ class PlayerActivity : BaseActivity() {
      * this case the activity is closed and a toast is shown to the user.
      */
     private fun setInitialEpisodeError(error: Throwable) {
-        viewModel.updateIsLoadingEpisode(false)
-        viewModel.isLoading.value = false
         if (error is PlayerViewModel.ExceptionWithStringResource) {
             toast(error.stringResource)
         } else {
@@ -1608,8 +1308,7 @@ class PlayerActivity : BaseActivity() {
     }
 
     private fun parseVideoUrl(videoUrl: String?): String? {
-        if (videoUrl.isNullOrBlank()) return null
-        return runCatching { Uri.parse(videoUrl).resolveUri(this) }.getOrNull()
+        return videoUrl?.toUri()?.resolveUri(this)
             ?: videoUrl
     }
 
@@ -1622,24 +1321,20 @@ class PlayerActivity : BaseActivity() {
             .mapValues { it.value.firstOrNull() ?: "" }
             .toMutableMap()
 
-        if (headers["User-Agent"].isNullOrEmpty()) {
-            headers["User-Agent"] = networkHelper.defaultUserAgentProvider()
-        }
-
         val httpHeaderString = headers.map {
             it.key + ": " + it.value.replace(",", "\\,")
         }.joinToString(",")
 
-        // ANZ -->
-        viewModel.safeMpvCall { mpv ->
-            mpv.setOptionString("http-header-fields", httpHeaderString)
-            // Also set the global user-agent for this specific video request to be safe,
-            // as some MPV versions prioritize it over the fields string.
-            headers["User-Agent"]?.let {
-                mpv.setOptionString("user-agent", it)
-            }
-        }
-        // ANZ <--
+        mpv.setOptionString("http-header-fields", httpHeaderString)
+
+        // need to fix the cache
+        // MPVLib.setOptionString("cache-on-disk", "yes")
+        // val cacheDir = File(applicationContext.filesDir, "media").path
+        // MPVLib.setOptionString("cache-dir", cacheDir)
+    }
+
+    fun onTrackLoadedFailure(url: String) {
+        viewModel.onTrackLoadedFailure(url)
     }
 
     /**
@@ -1654,7 +1349,7 @@ class PlayerActivity : BaseActivity() {
             context = applicationContext,
             message = stringResource(MR.strings.share_screenshot_info, anime.title, episode.name, seconds),
         )
-        startActivity(Intent.createChooser(intent, stringResource(MR.strings.action_share)))
+        startActivity(intent)
     }
 
     /**
@@ -1673,62 +1368,142 @@ class PlayerActivity : BaseActivity() {
     }
 
     /**
-     * Called from the presenter when a screenshot is set as cover or fails.
+     * Called from the presenter when a screenshot is set as art or fails.
      * It shows a different message depending on the [result].
      */
-    private fun onSetAsCoverResult(result: SetAsCover) {
+    private fun onSetAsArtResult(result: SetAsCover, artType: ArtType) {
         toast(
             when (result) {
-                SetAsCover.Success -> MR.strings.cover_updated
+                SetAsCover.Success ->
+                    when (artType) {
+                        ArtType.Cover -> MR.strings.cover_updated
+                        ArtType.Background -> MR.strings.cover_updated
+                        ArtType.Thumbnail -> MR.strings.cover_updated
+                    }
                 SetAsCover.AddToLibraryFirst -> MR.strings.notification_first_add_to_library
                 SetAsCover.Error -> MR.strings.notification_cover_update_failed
             },
         )
     }
 
-    // TODO: exception java.util.ConcurrentModificationException:
-    //  UPDATE: MAY HAVE BEEN FIXED
-    // at java.lang.Object java.util.ArrayList$Itr.next() (ArrayList.java:860)
-    // at void eu.kanade.tachiyomi.ui.player.PlayerActivity.fileLoaded() (PlayerActivity.kt:1874)
-    // at void eu.kanade.tachiyomi.ui.player.PlayerActivity.event(int) (PlayerActivity.kt:1566)
-    // at void is.xyz.mpv.MPV.event(int, MPVNode)
+    private fun changeVideoAspect(aspect: VideoAspect) {
+        var ratio = -1.0
+        val pan: Double
+        when (aspect) {
+            VideoAspect.Crop -> {
+                pan = 1.0
+            }
+
+            VideoAspect.Fit -> {
+                pan = 0.0
+                mpv.setPropertyDouble("panscan", 0.0)
+            }
+
+            VideoAspect.Stretch -> {
+                val dm = DisplayMetrics()
+                windowManager.defaultDisplay.getRealMetrics(dm)
+                ratio = dm.widthPixels / dm.heightPixels.toDouble()
+                pan = 0.0
+            }
+        }
+        viewModel.setAspect(aspect, pan, ratio)
+    }
+
+    private fun cycleRotations() {
+        requestedOrientation = when (requestedOrientation) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            -> {
+                playerPreferences.defaultPlayerOrientationType().set(PlayerOrientation.SensorPortrait)
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            }
+
+            else -> {
+                playerPreferences.defaultPlayerOrientationType().set(PlayerOrientation.SensorLandscape)
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+        }
+    }
+
+    private fun toggleShowSoftwareKeyboard() {
+        if (inputMethodManager.isActive) {
+            forceHideSoftwareKeyboard()
+        } else {
+            forceShowSoftwareKeyboard()
+        }
+    }
+
+    private fun forceShowSoftwareKeyboard() {
+        inputMethodManager.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+    }
+
+    private fun forceHideSoftwareKeyboard() {
+        inputMethodManager.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0)
+    }
+
     private fun fileLoaded() {
         if (player.isExiting) return
-        setMpvMediaTitle()
-        // ANZ -->
-        runOnUiThread { setupPlayerOrientation() }
-        // ANZ <--
-        setupChapters()
-        setupTracks()
-        viewModel.restoreAspectRatio()
 
-        // aniSkip stuff
-        viewModel.waitingSkipIntro = playerPreferences.waitingTimeIntroSkip().get()
-        lifecycleScope.launchIO {
-            if (
-                viewModel.introSkipEnabled &&
-                playerPreferences.aniSkipEnabled().get() &&
-                !(playerPreferences.disableAniSkipOnChapters().get() && viewModel.chapters.value.isNotEmpty())
-            ) {
-                viewModel.aniSkipResponse(player.duration)?.let {
-                    viewModel.updateChapters(
-                        ChapterUtils.mergeChapters(
-                            currentChapters = viewModel.chapters.value,
-                            stamps = it,
-                            duration = player.duration,
-                        ),
-                    )
-                    viewModel.setChapter(viewModel.pos.value)
+        setMpvOptions()
+        setMpvMediaTitle()
+        setupPlayerOrientation()
+
+        // ANZ -->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            powerManager?.addThermalStatusListener { status ->
+                if (status >= android.os.PowerManager.THERMAL_STATUS_SEVERE) {
+                    player.checkAdaptiveScaling(Long.MAX_VALUE)
                 }
             }
         }
-        updateDiscordRPC(exitingPlayer = false)
+        // ANZ <--
+        setupChapters()
+        viewModel.checkFileLoaded()
+
+        // aniSkip stuff
+        viewModel.viewModelScope.launchIO {
+            if (viewModel.introSkipEnabled && playerPreferences.aniSkipEnabled().get() &&
+                !(playerPreferences.disableAniSkipOnChapters().get() && viewModel.getChapterCount() > 0)
+            ) {
+                viewModel.aniSkipResponse(viewModel.duration.value)?.let {
+                    viewModel.addTimestamps(it)
+                }
+            }
+        }
     }
 
-    private fun setupTracks() {
+    private fun setMpvOptions() {
         if (player.isExiting) return
-        viewModel.isLoadingTracks.update { _ -> false }
-        viewModel.loadTracks()
+        val video = viewModel.currentVideo.value ?: return
+
+        // Only check for `MPV_ARGS_TAG` on downloaded videos
+        if (listOf("file", "content", "data").none { video.videoUrl.startsWith(it) }) {
+            return
+        }
+
+        try {
+            val metadata = mpv.getPropertyString("metadata")?.let {
+                Json.decodeFromString<Map<String, String>>(it)
+            } ?: return
+
+            val opts = metadata[Video.MPV_ARGS_TAG]
+                ?.split(";")
+                ?.map { it.split("=", limit = 2) }
+                ?: return
+
+            opts.forEach { parts ->
+                // AY -->
+                if (parts.size == 2) {
+                    val (option, value) = parts
+                    // <-- AY
+                    mpv.setPropertyString(option, value)
+                }
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to read video metadata" }
+        }
     }
 
     private fun setupChapters() {
@@ -1746,14 +1521,7 @@ class PlayerActivity : BaseActivity() {
             }
             ?: return
 
-        viewModel.updateChapters(
-            ChapterUtils.mergeChapters(
-                currentChapters = viewModel.chapters.value,
-                stamps = timestamps,
-                duration = player.duration,
-            ),
-        )
-        viewModel.setChapter(viewModel.pos.value)
+        viewModel.addTimestamps(timestamps)
     }
 
     private fun setMpvMediaTitle() {
@@ -1761,11 +1529,8 @@ class PlayerActivity : BaseActivity() {
         val anime = viewModel.currentAnime.value ?: return
         val episode = viewModel.currentEpisode.value ?: return
 
-        // ANZ -->
-        viewModel.safeMpvCall {
-            it.setPropertyString("user-data/current-anime/episode-title", episode.name)
-        }
-        // ANZ <--
+        // Write to mpv table
+        mpv.setPropertyString("user-data/current-anime/episode-title", episode.name)
 
         val epNumber = episode.episode_number.let { number ->
             if (ceil(number) == floor(number)) number.toInt() else number
@@ -1778,11 +1543,7 @@ class PlayerActivity : BaseActivity() {
             episode.name,
         )
 
-        // ANZ -->
-        viewModel.safeMpvCall {
-            it.setPropertyString("force-media-title", title)
-        }
-        // ANZ <--
+        mpv.setPropertyString("force-media-title", title)
     }
 
     private fun endFile(eofReached: Boolean) {
@@ -1790,53 +1551,30 @@ class PlayerActivity : BaseActivity() {
             viewModel.changeEpisode(previous = false, autoPlay = true)
         }
     }
-    fun onVideoError(errorMessage: String) {
-        if (player.isExiting) return
-        logcat(LogPriority.ERROR) { errorMessage }
-        showToast(errorMessage)
-
-        if (playerPreferences.switchOnFailure().get() || playerPreferences.selfHealingLinks().get()) {
-            viewModel.viewModelScope.launchIO {
-                if (!viewModel.recoverOrLoadBestVideo()) {
-                    runOnUiThread { finish() }
-                }
-            }
-        } else {
-            viewModel.setCurrentVideoError()
-            viewModel.updateIsLoadingEpisode(false)
-            viewModel.isLoading.value = false
-            viewModel.setIsStopped(true)
-        }
-    }
 
     // AM (DISCORD) -->
     private fun updateDiscordRPC(exitingPlayer: Boolean) {
         if (!connectionsPreferences.enableDiscordRPC().get()) return
 
-        viewModel.viewModelScope.launchIO {
+        DiscordRPCService.discordScope.launchIO {
             try {
                 if (!exitingPlayer) {
-                    val anime = viewModel.currentAnime.value ?: return@launchIO
-                    val episode = viewModel.currentEpisode.value ?: return@launchIO
-                    val isPaused = player.paused == true
+                    // ANK -->
+                    val timePos = viewModel.pos.value ?: return@launchIO
+                    val duration = viewModel.duration.value ?: 1440
+                    // ANK <--
 
-                    val (startTime, endTime) = if (isPaused) {
-                        Pair(null, null)
-                    } else {
-                        val currentPosition = viewModel.pos.value.toLong() * 1000
-                        val duration = player.duration?.toLong()?.times(1000) ?: 1440000L
-
-                        val startTimestamp = Calendar.getInstance().apply {
-                            timeInMillis = System.currentTimeMillis() - currentPosition
-                        }
-                        val endTimestamp = Calendar.getInstance().apply {
-                            timeInMillis = startTimestamp.timeInMillis
-                            add(Calendar.MILLISECOND, duration.toInt())
-                        }
-                        Pair(startTimestamp.timeInMillis, endTimestamp.timeInMillis)
+                    val currentPosition = timePos.toLong() * 1000
+                    val startTimestamp = Calendar.getInstance().apply {
+                        timeInMillis = System.currentTimeMillis() - currentPosition
+                    }
+                    val endTimestamp = Calendar.getInstance().apply {
+                        timeInMillis = startTimestamp.timeInMillis
+                        add(Calendar.SECOND, duration)
                     }
 
-                    val formattedEpisodeNumber = episode.name
+                    val anime = viewModel.currentAnime.value ?: return@launchIO
+                    val episode = viewModel.currentEpisode.value ?: return@launchIO
 
                     DiscordRPCService.setPlayerActivity(
                         context = this@PlayerActivity,
@@ -1844,20 +1582,35 @@ class PlayerActivity : BaseActivity() {
                             incognitoMode = viewModel.currentSource.value?.isNsfw() == true || viewModel.incognitoMode,
                             animeId = anime.id,
                             animeTitle = anime.ogTitle,
-                            thumbnailUrl = anime.thumbnailUrl ?: "",
-                            episodeNumber = formattedEpisodeNumber,
-                            startTimestamp = startTime,
-                            endTimestamp = endTime,
-                            isPaused = isPaused,
+                            thumbnailUrl = anime.thumbnailUrl.takeIf { UrlUtils.isOnlineUrl(it) } ?: anime.ogThumbnailUrl,
+                            episodeNumber = if (connectionsPreferences.useChapterTitles().get()) {
+                                episode.name
+                            } else {
+                                episode.episode_number.toString()
+                            },
+                            startTimestamp = startTimestamp.timeInMillis,
+                            endTimestamp = endTimestamp.timeInMillis,
                         ),
                     )
                 } else {
-                    val lastUsedScreen = DiscordRPCService.lastUsedScreen
-                    DiscordRPCService.setAnimeScreen(this@PlayerActivity, lastUsedScreen)
+                    with(DiscordRPCService) {
+                        setScreen(this@PlayerActivity)
+                    }
                 }
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR) { "Error updating Discord RPC: ${e.message}" }
             }
         }
     }
+
+    // ANZ -->
+    fun setCustomVideoAspect(ratio: Double, label: String) {
+        viewModel.setCustomVideoAspect(ratio, label)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (player.onKey(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+    // ANZ <--
 }
