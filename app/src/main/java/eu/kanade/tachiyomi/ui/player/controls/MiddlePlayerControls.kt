@@ -88,6 +88,7 @@ fun MiddlePlayerControls(
 
         val icon = AnimatedImageVector.animatedVectorResource(R.drawable.anim_play_to_pause)
         val interaction = remember { MutableInteractionSource() }
+        // ANZ -->
         when {
             isStopped -> {
                 Spacer(Modifier.size(96.dp))
@@ -107,38 +108,32 @@ fun MiddlePlayerControls(
                     textAlign = TextAlign.Center,
                 )
             }
-
+            (isLoading || isLoadingEpisode) && showLoadingCircle -> {
+                CircularProgressIndicator(Modifier.size(96.dp))
+            }
             else -> {
-                Box(
-                    modifier = Modifier.size(96.dp),
-                    contentAlignment = Alignment.Center
+                AnimatedVisibility(
+                    visible = controlsShown && !areControlsLocked,
+                    enter = enter,
+                    exit = exit,
                 ) {
-                    val showLoading = (isLoading || isLoadingEpisode) && showLoadingCircle
-                    if (showLoading) {
-                        CircularProgressIndicator(Modifier.size(96.dp))
-                    }
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = controlsShown && !areControlsLocked && !showLoading,
-                        enter = enter,
-                        exit = exit,
-                    ) {
-                        Image(
-                            painter = rememberAnimatedVectorPainter(icon, !paused),
-                            modifier = Modifier
-                                .size(96.dp)
-                                .clip(CircleShape)
-                                .clickable(
-                                    interaction,
-                                    ripple(),
-                                    onClick = onPlayPauseClick,
-                                )
-                                .padding(MaterialTheme.padding.medium),
-                            contentDescription = null,
-                        )
-                    }
+                    Image(
+                        painter = rememberAnimatedVectorPainter(icon, !paused),
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .clickable(
+                                interaction,
+                                ripple(),
+                                onClick = onPlayPauseClick,
+                            )
+                            .padding(MaterialTheme.padding.medium),
+                        contentDescription = null,
+                    )
                 }
             }
         }
+        // ANZ <--
 
         AnimatedVisibility(
             visible = controlsShown && !areControlsLocked,

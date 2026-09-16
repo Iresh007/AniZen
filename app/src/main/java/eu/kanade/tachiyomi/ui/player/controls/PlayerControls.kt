@@ -138,13 +138,16 @@ fun PlayerControls(
     val controlsShown by viewModel.controlsShown.collectAsState()
     val areControlsLocked by viewModel.areControlsLocked.collectAsState()
     val seekBarShown by viewModel.seekBarShown.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    // ANZ -->
     val pausedForCache by viewModel.pausedForCache.collectAsState()
+    val coreIdle by viewModel.coreIdle.collectAsState()
     val isLoadingEpisode by viewModel.isLoadingEpisode.collectAsState()
     val isStopped by viewModel.isStopped.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val position by viewModel.pos.collectAsState()
     val paused by viewModel.paused.collectAsState()
+    val isLoading = pausedForCache == true || (coreIdle == true && paused == false)
+    // ANZ <--
     val gestureSeekAmount by viewModel.gestureSeekAmount.collectAsState()
     val doubleTapSeekAmount by viewModel.doubleTapSeekAmount.collectAsState()
     val showDoubleTapOvals by playerPreferences.showDoubleTapOvals().collectAsState()
@@ -396,10 +399,11 @@ fun PlayerControls(
                     )
                 }
                 val isLongPressing by viewModel.isLongPressing.collectAsState()
+                 // ANZ -->
                  AnimatedVisibility(
                     visible = (
                         (controlsShown && !areControlsLocked || gestureSeekAmount != null) ||
-                            ((isLoading || pausedForCache == true) && !isStopped) ||
+                            isLoading ||
                             isLoadingEpisode
                         ) && !isLongPressing,
                     enter = fadeIn(playerControlsEnterAnimationSpec()),
@@ -418,7 +422,7 @@ fun PlayerControls(
                         hasNext = hasNextEpisode,
                         onSkipNext = { viewModel.changeEpisode(false) },
                         isStopped = isStopped,
-                        isLoading = isLoading || pausedForCache == true,
+                        isLoading = isLoading,
                         isLoadingEpisode = isLoadingEpisode,
                         controlsShown = controlsShown,
                         areControlsLocked = areControlsLocked,
@@ -430,6 +434,7 @@ fun PlayerControls(
                         exit = fadeOut(playerControlsExitAnimationSpec()),
                     )
                 }
+                // ANZ <--
                 AnimatedVisibility(
                     visible = (controlsShown || seekBarShown) && !areControlsLocked && !isLongPressing,
                     enter = if (!reduceMotion) {
@@ -444,13 +449,14 @@ fun PlayerControls(
                     } else {
                         fadeOut(playerControlsExitAnimationSpec())
                     },
+                    // ANZ -->
                     modifier = Modifier.constrainAs(seekbar) {
-                        if (isLandscape) {
-                            bottom.linkTo(bottomLeftControls.top)
-                        } else {
-                            bottom.linkTo(portraitBottomBar.top)
-                        }
-                    }.offset(y = spacing.medium),
+                        bottom.linkTo(parent.bottom, spacing.medium)
+                        start.linkTo(parent.start)
+                        end.linkTo(parent.end)
+                        width = Dimension.fillToConstraints
+                    },
+                    // ANZ <--
                 ) {
                     Column {
                         // Skip intro prompt / custom action button, anchored to the seekbar:
@@ -633,12 +639,14 @@ fun PlayerControls(
                     visible = controlsShown && !areControlsLocked && !isLongPressing && !isLandscape,
                     enter = fadeIn(),
                     exit = fadeOut(),
+                    // ANZ -->
                     modifier = Modifier.constrainAs(portraitBottomBar) {
-                        bottom.linkTo(parent.bottom, spacing.medium)
+                        bottom.linkTo(seekbar.top, spacing.medium)
                         start.linkTo(parent.start)
                         end.linkTo(parent.end)
                         width = Dimension.fillToConstraints
                     },
+                    // ANZ <--
                 ) {
                     Row(
                         modifier = Modifier
@@ -674,10 +682,12 @@ fun PlayerControls(
                     } else {
                         fadeOut(playerControlsExitAnimationSpec())
                     },
+                    // ANZ -->
                     modifier = Modifier.constrainAs(bottomRightControls) {
-                        bottom.linkTo(parent.bottom, spacing.medium)
+                        bottom.linkTo(seekbar.top)
                         end.linkTo(seekbar.end)
                     },
+                    // ANZ <--
                 ) {
                     BottomRightPlayerControls(
                         buttons = bottomRightButtonsList,
@@ -702,12 +712,14 @@ fun PlayerControls(
                     } else {
                         fadeOut(playerControlsExitAnimationSpec())
                     },
+                    // ANZ -->
                     modifier = Modifier.constrainAs(bottomLeftControls) {
-                        bottom.linkTo(parent.bottom, spacing.medium)
+                        bottom.linkTo(seekbar.top)
                         start.linkTo(seekbar.start)
                         width = Dimension.fillToConstraints
                         end.linkTo(bottomRightControls.start)
                     },
+                    // ANZ <--
                 ) {
                     BottomLeftPlayerControls(
                         buttons = bottomLeftButtonsList,

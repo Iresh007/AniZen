@@ -1460,6 +1460,9 @@ class PlayerActivity : BaseActivity() {
         }
         // ANZ <--
         setupChapters()
+        // ANZ -->
+        viewModel.isLoading.update { false }
+        // ANZ <--
         viewModel.checkFileLoaded()
 
         // aniSkip stuff

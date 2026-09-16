@@ -248,7 +248,9 @@ class PlayerViewModel @JvmOverloads constructor(
     val mediaTitle = MutableStateFlow("")
     val animeTitle = MutableStateFlow("")
 
-    val isLoading = MutableStateFlow(true)
+    // ANZ -->
+    val isLoading = MutableStateFlow(false)
+    // ANZ <--
     val hasLoadedTracks = MutableStateFlow(false)
     val hasLoadedSubs = MutableStateFlow(false)
     val hasLoadedAudio = MutableStateFlow(false)
