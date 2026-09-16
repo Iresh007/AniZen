@@ -132,8 +132,8 @@ import kotlin.time.Duration.Companion.milliseconds
 class PlayerActivity : BaseActivity() {
     // ANZ -->
     private var httpServer: HttpServer? = null
+    internal val viewModel by viewModels<PlayerViewModel>()
     // ANZ <--
-    private val viewModel by viewModels<PlayerViewModel>()
     private val mpv by lazy { viewModel.mpv }
     private val player by lazy { AniyomiMPVView(this, null) }
     private val playerObserver by lazy { PlayerObserver(this) }
