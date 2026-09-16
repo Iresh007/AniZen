@@ -198,6 +198,18 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     }
 
     // ANZ -->
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        val inst = mpv
+        if (inst == null || !inst.isInitialized) return
+        super.surfaceCreated(holder)
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        val inst = mpv
+        if (inst == null || !inst.isInitialized) return
+        super.surfaceDestroyed(holder)
+    }
+
     fun release() {
         initialized = false
         val inst = mpv
@@ -216,7 +228,22 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         this.mpv = mpvInst
         if (!mpvInst.isInitialized) return
         initialized = true
-        setVo(if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
+        // ANZ -->
+        val targetVo = if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu"
+        setVo(targetVo)
+        if (holder.surface.isValid) {
+            runCatching {
+                mpvInst.attachSurface(holder.surface)
+                mpvInst.setOptionString("force-window", "yes")
+                mpvInst.setPropertyString("vo", targetVo)
+            }
+        } else {
+            runCatching {
+                mpvInst.setOptionString("force-window", "no")
+                mpvInst.setPropertyString("vo", "null")
+            }
+        }
+        // ANZ <--
 
         mpv?.setPropertyBoolean("pause", true)
         mpv?.setOptionString("profile", "fast")

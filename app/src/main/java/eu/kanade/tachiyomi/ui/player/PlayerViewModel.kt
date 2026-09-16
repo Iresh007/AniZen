@@ -365,18 +365,34 @@ class PlayerViewModel @JvmOverloads constructor(
 
     // ANZ -->
     private val storageManager: StorageManager = Injekt.get()
-    val mpv = MPV(activity.applicationContext) {
-        val configDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-            storageManager.getMPVConfigDirectory()?.filePath ?: activity.applicationContext.filesDir.path
-        } else {
-            activity.applicationContext.filesDir.path
+
+    private fun createMpvInstance(): MPV {
+        return MPV(activity.applicationContext) {
+            val configDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+                storageManager.getMPVConfigDirectory()?.filePath ?: activity.applicationContext.filesDir.path
+            } else {
+                activity.applicationContext.filesDir.path
+            }
+            it.setOptionString("config", "yes")
+            it.setOptionString("config-dir", configDir)
+            it.setOptionString("gpu-shader-cache-dir", cachePath)
+            it.setOptionString("icc-cache-dir", cachePath)
+            it.setOptionString("idle", "yes")
+            it.setOptionString("force-window", "no")
+            it.setOptionString("keep-open", "yes")
         }
-        it.setOptionString("config", "yes")
-        it.setOptionString("config-dir", configDir)
-        it.setOptionString("gpu-shader-cache-dir", cachePath)
-        it.setOptionString("icc-cache-dir", cachePath)
-        it.setOptionString("keep-open", "yes")
     }
+
+    private var _mpv: MPV = createMpvInstance()
+
+    val mpv: MPV
+        get() = synchronized(mpvLock) {
+            if (isMpvClosed || !_mpv.isInitialized) {
+                isMpvClosed = false
+                _mpv = createMpvInstance()
+            }
+            _mpv
+        }
 
     private val mpvLock = Any()
 
@@ -386,7 +402,8 @@ class PlayerViewModel @JvmOverloads constructor(
 
     fun <T> safeMpvCall(block: (MPV) -> T): T? {
         return synchronized(mpvLock) {
-            if (isMpvClosed) null else block(mpv)
+            val inst = mpv
+            if (isMpvClosed || !inst.isInitialized) null else runCatching { block(inst) }.getOrNull()
         }
     }
     // ANZ <--
@@ -1712,7 +1729,9 @@ class PlayerViewModel @JvmOverloads constructor(
         // ANZ -->
         synchronized(mpvLock) {
             isMpvClosed = true
-            mpv.close()
+            if (_mpv.isInitialized) {
+                runCatching { _mpv.close() }
+            }
         }
         // ANZ <--
     }
