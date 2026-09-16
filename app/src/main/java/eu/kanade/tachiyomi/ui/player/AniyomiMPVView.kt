@@ -21,6 +21,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.view.Surface
+import android.view.SurfaceHolder
 import android.util.AttributeSet
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
