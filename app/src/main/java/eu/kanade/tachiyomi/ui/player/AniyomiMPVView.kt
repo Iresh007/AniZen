@@ -64,23 +64,23 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
 
     // ANZ -->
     private fun getPropertyInt(property: String): Int? {
-        if (!initialized) return null
-        return mpv?.getPropertyInt(property)
+        if (!initialized || mpv?.isInitialized != true) return null
+        return runCatching { mpv?.getPropertyInt(property) }.getOrNull()
     }
 
     private fun getPropertyBoolean(property: String): Boolean? {
-        if (!initialized) return null
-        return mpv?.getPropertyBoolean(property)
+        if (!initialized || mpv?.isInitialized != true) return null
+        return runCatching { mpv?.getPropertyBoolean(property) }.getOrNull()
     }
 
     private fun getPropertyDouble(property: String): Double? {
-        if (!initialized) return null
-        return mpv?.getPropertyDouble(property)
+        if (!initialized || mpv?.isInitialized != true) return null
+        return runCatching { mpv?.getPropertyDouble(property) }.getOrNull()
     }
 
     private fun getPropertyString(property: String): String? {
-        if (!initialized) return null
-        return mpv?.getPropertyString(property)
+        if (!initialized || mpv?.isInitialized != true) return null
+        return runCatching { mpv?.getPropertyString(property) }.getOrNull()
     }
 
     val duration: Int?
@@ -119,15 +119,19 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
 
     inner class TrackDelegate(private val name: String) {
         operator fun getValue(thisRef: Any?, property: KProperty<*>): Int {
-            val v = getPropertyString(name)
+            if (!initialized || mpv?.isInitialized != true) return -1
+            val v = runCatching { getPropertyString(name) }.getOrNull()
             if (v == "no" || v == null) return -1
             return v.toIntOrNull() ?: -1
         }
         operator fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
-            if (value == -1) {
-                mpv?.setPropertyString(name, "no")
-            } else {
-                mpv?.setPropertyInt(name, value)
+            if (!initialized || mpv?.isInitialized != true) return
+            runCatching {
+                if (value == -1) {
+                    mpv?.setPropertyString(name, "no")
+                } else {
+                    mpv?.setPropertyInt(name, value)
+                }
             }
         }
     }
@@ -166,14 +170,20 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     }
 
     fun restoreCache() {
-        mpv?.setPropertyString("demuxer-max-bytes", "$currentMaxBytes")
-        mpv?.setPropertyString("demuxer-max-back-bytes", "$currentMaxBackBytes")
+        if (!initialized || mpv?.isInitialized != true) return
+        runCatching {
+            mpv?.setPropertyString("demuxer-max-bytes", "$currentMaxBytes")
+            mpv?.setPropertyString("demuxer-max-back-bytes", "$currentMaxBackBytes")
+        }
     }
 
     fun shrinkCache() {
-        val shrinkBytes = 64 * 1024 * 1024L
-        mpv?.setPropertyString("demuxer-max-bytes", "$shrinkBytes")
-        mpv?.setPropertyString("demuxer-max-back-bytes", "$shrinkBytes")
+        if (!initialized || mpv?.isInitialized != true) return
+        runCatching {
+            val shrinkBytes = 64 * 1024 * 1024L
+            mpv?.setPropertyString("demuxer-max-bytes", "$shrinkBytes")
+            mpv?.setPropertyString("demuxer-max-back-bytes", "$shrinkBytes")
+        }
     }
     // ANZ <--
 
@@ -190,18 +200,21 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     // ANZ -->
     fun release() {
         initialized = false
-        mpv?.let {
-            it.setPropertyString("vo", "null")
-            it.setPropertyString("force-window", "no")
-            it.detachSurface()
+        val inst = mpv
+        if (inst != null && inst.isInitialized) {
+            runCatching {
+                inst.setPropertyString("vo", "null")
+                inst.setPropertyString("force-window", "no")
+                inst.detachSurface()
+            }
         }
-        holder.removeCallback(this)
         mpv = null
     }
     // ANZ <--
 
     fun init(mpvInst: MPV) {
         this.mpv = mpvInst
+        if (!mpvInst.isInitialized) return
         initialized = true
         setVo(if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
 
@@ -300,7 +313,12 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     }
 
     fun observeProperties() {
-        for ((name, format) in observedProps) mpv?.observeProperty(name, format)
+        if (!initialized) return
+        val inst = mpv ?: return
+        if (!inst.isInitialized) return
+        for ((name, format) in observedProps) {
+            runCatching { inst.observeProperty(name, format) }
+        }
     }
 
     var onPlayerReady: (() -> Unit)? = null
