@@ -51,7 +51,9 @@ class SubtitlePreferences(
     fun subtitleJustification() = preferenceStore.getEnum("pref_sub_justify", SubtitleJustification.Auto)
     fun subtitlePos() = preferenceStore.getInt("pref_sub_pos", 100)
 
-    fun overrideSubsASS() = preferenceStore.getBoolean("pref_override_subtitles_ass", false)
+    // ANZ -->
+    fun overrideSubsASS() = preferenceStore.getEnum("pref_override_subtitles_ass_enum", SubtitleAssOverride.No)
+    // ANZ <--
 
     fun subtitlesDelay() = preferenceStore.getInt("pref_subtitles_delay", 0)
     fun subtitlesSpeed() = preferenceStore.getFloat("pref_subtitles_speed", 1f)
@@ -66,4 +68,35 @@ enum class SubtitleJustification(
     Center("center", Icons.Default.FormatAlignCenter),
     Right("right", Icons.AutoMirrored.Default.FormatAlignRight),
     Auto("auto", Icons.Default.FormatAlignJustify),
+    ;
+
+    companion object {
+        fun byValue(value: String): SubtitleJustification {
+            return when (value) {
+                "left" -> Left
+                "center" -> Center
+                "right" -> Right
+                else -> Auto
+            }
+        }
+    }
 }
+
+// ANZ -->
+enum class SubtitleAssOverride(
+    val value: String,
+    val titleRes: dev.icerock.moko.resources.StringResource,
+) {
+    No("no", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_no),
+    Yes("yes", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_yes),
+    Scale("scale", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_scale),
+    Force("force", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_force),
+    Strip("strip", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_strip),
+    ;
+
+    companion object {
+        fun byValue(value: String): SubtitleAssOverride =
+            entries.firstOrNull { it.value == value } ?: No
+    }
+}
+// ANZ <--

@@ -329,16 +329,12 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
             (subtitlePreferences.subtitlesSecondaryDelay().get() / 1000.0).toString(),
         )
         mpv?.setOptionString("sub-font", subtitlePreferences.subtitleFont().get())
-        // ANZ -->
-        // sub-ass-override is intentionally NOT forced here. mpv defaults to "scale" which
-        // matches what the UI's reset button sets (line 151 in SubtitleSettingsMiscellaneousCard).
-        // Previously setting "no" here created a mismatch with the UI's "scale" off-state, causing
-        // ASS subtitle spacing and font size to be rendered differently from Anikku's behavior.
-        if (subtitlePreferences.overrideSubsASS().get()) {
-            mpv?.setOptionString("sub-ass-override", "force")
-            mpv?.setOptionString("sub-ass-justify", "yes")
+        subtitlePreferences.overrideSubsASS().get().let {
+            if (it != eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride.No) {
+                mpv?.setOptionString("sub-ass-override", it.value)
+                mpv?.setOptionString("sub-ass-justify", "yes")
+            }
         }
-        // ANZ <--
         mpv?.setOptionString("sub-font-size", subtitlePreferences.subtitleFontSize().get().toString())
         mpv?.setOptionString("sub-bold", if (subtitlePreferences.boldSubtitles().get()) "yes" else "no")
         mpv?.setOptionString("sub-italic", if (subtitlePreferences.italicSubtitles().get()) "yes" else "no")
