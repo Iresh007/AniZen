@@ -51,6 +51,11 @@ class MpvConfig(
             // Drop any stale fonts.conf to prevent broken font fallbacks and startup stutters
             mpvDir.findFile("fonts.conf")?.delete()
             storageManager.getMPVConfigDirectory()?.findFile("fonts.conf")?.delete()
+            // ANZ -->
+            // Ensure the fonts directory exists before player.init() so sub-fonts-dir is valid
+            // from the first frame (sub-font-provider=none relies on this path at startup).
+            mpvDir.createDirectory(MPV_FONTS_DIR)
+            // ANZ <--
             copyUserFiles(mpvDir)
             copyAssets(mpvDir)
         } catch (e: Exception) {

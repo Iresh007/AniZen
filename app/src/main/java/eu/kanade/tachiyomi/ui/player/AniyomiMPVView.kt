@@ -195,6 +195,17 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         setSafeOptionString("tls-verify", "yes")
         setSafeOptionString("tls-ca-file", "${context.filesDir.path}/${MpvConfig.MPV_DIR}/cacert.pem")
 
+        // ANZ -->
+        // Skip fontconfig system-font scan entirely — avoids a ~200-font scan of /system/fonts/
+        // on every cold start, and prevents libass from falling back to CJK fonts (e.g. MiSans on
+        // Xiaomi) when "Sans Serif" is not resolved by fontconfig.  We point libass directly at our
+        // provisioned internal fonts dir instead.
+        val internalFontsDir = "${context.filesDir.path}/${MpvConfig.MPV_DIR}/${MpvConfig.MPV_FONTS_DIR}"
+        setSafeOptionString("sub-font-provider", "none")
+        setSafeOptionString("sub-fonts-dir", internalFontsDir)
+        setSafeOptionString("osd-fonts-dir", internalFontsDir)
+        // ANZ <--
+
         // Track selection handled reactively by ViewModel
         mpv?.setOptionString("sid", "no")
         mpv?.setOptionString("aid", "no")
