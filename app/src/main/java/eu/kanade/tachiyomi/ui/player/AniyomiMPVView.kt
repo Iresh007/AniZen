@@ -144,6 +144,7 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
 
         // ANZ -->
         mpv?.setOptionString("hwdec", if (decoderPreferences.tryHWDecoding().get()) "auto" else "no")
+        val isSmoothMotion = decoderPreferences.smoothMotion().get()
         // ANZ <--
 
         // Scaling quality
@@ -317,18 +318,23 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
             (subtitlePreferences.subtitlesSecondaryDelay().get() / 1000.0).toString(),
         )
         mpv?.setOptionString("sub-font", subtitlePreferences.subtitleFont().get())
-        if (subtitlePreferences.overrideSubsASS().get()) {
-            mpv?.setOptionString("sub-ass-override", "force")
+        // ANZ -->
+        val overrideAss = if (subtitlePreferences.overrideSubsASS().get()) "force" else "no"
+        mpv?.setOptionString("sub-ass-override", overrideAss)
+        if (overrideAss != "no") {
             mpv?.setOptionString("sub-ass-justify", "yes")
         }
+        // ANZ <--
         mpv?.setOptionString("sub-font-size", subtitlePreferences.subtitleFontSize().get().toString())
         mpv?.setOptionString("sub-bold", if (subtitlePreferences.boldSubtitles().get()) "yes" else "no")
         mpv?.setOptionString("sub-italic", if (subtitlePreferences.italicSubtitles().get()) "yes" else "no")
         mpv?.setOptionString("sub-justify", subtitlePreferences.subtitleJustification().get().value)
         mpv?.setOptionString("sub-color", subtitlePreferences.textColorSubtitles().get().toColorHexString())
         mpv?.setOptionString("sub-back-color", subtitlePreferences.backgroundColorSubtitles().get().toColorHexString())
-        mpv?.setOptionString("sub-border-color", subtitlePreferences.borderColorSubtitles().get().toColorHexString())
-        mpv?.setOptionString("sub-border-size", subtitlePreferences.subtitleBorderSize().get().toString())
+        // ANZ -->
+        mpv?.setOptionString("sub-outline-color", subtitlePreferences.borderColorSubtitles().get().toColorHexString())
+        mpv?.setOptionString("sub-outline-size", subtitlePreferences.subtitleBorderSize().get().toString())
+        // ANZ <--
         mpv?.setOptionString("sub-border-style", subtitlePreferences.borderStyleSubtitles().get().value)
         mpv?.setOptionString("sub-shadow-offset", subtitlePreferences.shadowOffsetSubtitles().get().toString())
         mpv?.setOptionString("sub-pos", subtitlePreferences.subtitlePos().get().toString())
