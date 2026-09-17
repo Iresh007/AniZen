@@ -201,11 +201,7 @@ class PlayerViewModel @JvmOverloads constructor(
     val cachePath: String = context.applicationContext.cacheDir.path
     val mpv = MPV(context.applicationContext) {
         // ANZ -->
-        val configDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-            storageManager.getMPVConfigDirectory()?.filePath ?: context.filesDir.resolve(MPV_DIR).toString()
-        } else {
-            context.filesDir.resolve(MPV_DIR).toString()
-        }
+        val configDir = context.filesDir.resolve(MPV_DIR).toString()
         // ANZ <--
         it.setOptionString("config", "yes")
         it.setOptionString("config-dir", configDir)

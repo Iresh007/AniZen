@@ -50,6 +50,7 @@ class MpvConfig(
         try {
             // Drop any stale fonts.conf to prevent broken font fallbacks and startup stutters
             mpvDir.findFile("fonts.conf")?.delete()
+            storageManager.getMPVConfigDirectory()?.findFile("fonts.conf")?.delete()
             copyUserFiles(mpvDir)
             copyAssets(mpvDir)
         } catch (e: Exception) {
