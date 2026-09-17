@@ -330,9 +330,12 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         )
         mpv?.setOptionString("sub-font", subtitlePreferences.subtitleFont().get())
         // ANZ -->
-        val overrideAss = if (subtitlePreferences.overrideSubsASS().get()) "force" else "no"
-        mpv?.setOptionString("sub-ass-override", overrideAss)
-        if (overrideAss != "no") {
+        // sub-ass-override is intentionally NOT forced here. mpv defaults to "scale" which
+        // matches what the UI's reset button sets (line 151 in SubtitleSettingsMiscellaneousCard).
+        // Previously setting "no" here created a mismatch with the UI's "scale" off-state, causing
+        // ASS subtitle spacing and font size to be rendered differently from Anikku's behavior.
+        if (subtitlePreferences.overrideSubsASS().get()) {
+            mpv?.setOptionString("sub-ass-override", "force")
             mpv?.setOptionString("sub-ass-justify", "yes")
         }
         // ANZ <--
