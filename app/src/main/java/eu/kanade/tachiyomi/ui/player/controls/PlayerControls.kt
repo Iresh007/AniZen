@@ -100,6 +100,7 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import tachiyomi.core.common.preference.deleteAndGet
 import tachiyomi.core.common.preference.minusAssign
 import tachiyomi.core.common.preference.plusAssign
 import tachiyomi.presentation.core.components.material.padding
