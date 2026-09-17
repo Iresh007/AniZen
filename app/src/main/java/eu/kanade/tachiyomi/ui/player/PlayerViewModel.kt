@@ -340,7 +340,9 @@ class PlayerViewModel @JvmOverloads constructor(
     val isSeekingUI = MutableStateFlow(false)
     val seekPosition = MutableStateFlow(0f)
     val isLongPressing = MutableStateFlow(false)
-    val playbackSpeed = MutableStateFlow(playerPreferences.playerSpeed().get())
+    // ANZ -->
+    val playbackSpeed: kotlinx.coroutines.flow.StateFlow<Float?> = mpv.propFlow<Float>("speed")
+    // ANZ <--
     val readAhead = MutableStateFlow(0f)
     val videoZoom = MutableStateFlow(0f)
     val videoPanX = MutableStateFlow(0f)

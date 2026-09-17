@@ -65,6 +65,7 @@ import eu.kanade.tachiyomi.ui.player.controls.components.AutoPlaySwitch
 import eu.kanade.tachiyomi.ui.player.controls.components.ControlsButton
 import eu.kanade.tachiyomi.ui.player.controls.components.CurrentChapter
 import eu.kanade.tachiyomi.ui.player.getIcon
+import eu.kanade.tachiyomi.ui.player.controls.components.sheets.toFixed
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
@@ -174,17 +175,18 @@ fun RenderPlayerButton(
             )
         }
         PlayerButton.PlaybackSpeed -> {
+            // ANZ -->
+            val currentSpeed = playbackSpeed ?: viewModel.playerPreferences.playerSpeed().get()
             ControlsButton(
-                text = stringResource(MR.strings.player_speed, playbackSpeed),
+                text = stringResource(MR.strings.player_speed, currentSpeed),
                 onClick = {
-                    val newSpeed = if (playbackSpeed >= 2) 0.25f else playbackSpeed + 0.25f
-                    // ANZ -->
+                    val newSpeed = if (currentSpeed >= 2f) 0.25f else (currentSpeed + 0.25f).toFixed(2)
                     viewModel.mpv.setPropertyDouble("speed", newSpeed.toDouble())
-                    // ANZ <--
                     viewModel.playerPreferences.playerSpeed().set(newSpeed)
                 },
                 onLongClick = { viewModel.showSheet(Sheets.PlaybackSpeed) },
             )
+            // ANZ <--
         }
         PlayerButton.CurrentChapter -> {
             AnimatedVisibility(

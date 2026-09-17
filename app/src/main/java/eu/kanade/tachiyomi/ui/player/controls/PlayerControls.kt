@@ -97,8 +97,11 @@ import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
 import exh.log.InterpolationStatsOverlay
 import `is`.xyz.mpv.MPV
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import tachiyomi.core.common.preference.minusAssign
+import tachiyomi.core.common.preference.plusAssign
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
@@ -782,7 +785,11 @@ fun PlayerControls(
         val highlightDefaultStream = perAnimeDefaultStream && showDefaultStreamHighlight
         val autoScrollToDefault = perAnimeDefaultStream && autoScrollDefaultStream
         val decoder by viewModel.currentDecoder.collectAsState()
-        val speed by viewModel.playbackSpeed.collectAsState()
+        // ANZ -->
+        val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+        val speedPresets by playerPreferences.speedPresets().collectAsState()
+        val pitchCorrection by audioPreferences.enablePitchCorrection().collectAsState()
+        // ANZ <--
         val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
         val showSubtitles by subtitlePreferences.screenshotSubtitles().collectAsState()
         val showFailedHosters by playerPreferences.showFailedHosters().collectAsState()
@@ -821,9 +828,23 @@ fun PlayerControls(
             },
             decoder = decoder,
             onUpdateDecoder = viewModel::updateDecoder,
-            speed = speed,
             // ANZ -->
+            pitchCorrection = pitchCorrection,
+            onPitchCorrectionChange = {
+                audioPreferences.enablePitchCorrection().set(it)
+                viewModel.mpv.setPropertyBoolean("audio-pitch-correction", it)
+            },
+            speed = playbackSpeed ?: playerPreferences.playerSpeed().get(),
+            speedPresets = speedPresets.map { it.toFloat() }.sorted().toPersistentList(),
             onSpeedChange = { viewModel.mpv.setPropertyDouble("speed", it.toFixed(2).toDouble()) },
+            onMakeDefaultSpeed = { playerPreferences.playerSpeed().set(it.toFixed(2)) },
+            onAddSpeedPreset = { playerPreferences.speedPresets() += it.toFixed(2).toString() },
+            onRemoveSpeedPreset = { playerPreferences.speedPresets() -= it.toFixed(2).toString() },
+            onResetSpeedPresets = playerPreferences.speedPresets()::delete,
+            onResetDefaultSpeed = {
+                val defaultSpeed = playerPreferences.playerSpeed().deleteAndGet().toFixed(2)
+                viewModel.mpv.setPropertyDouble("speed", defaultSpeed.toDouble())
+            },
             // ANZ <--
             sleepTimerTimeRemaining = sleepTimerTimeRemaining,
             onStartSleepTimer = viewModel::startTimer,
