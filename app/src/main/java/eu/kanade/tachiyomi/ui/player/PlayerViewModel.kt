@@ -200,15 +200,10 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val cachePath: String = context.applicationContext.cacheDir.path
     val mpv = MPV(context.applicationContext) {
-        // ANZ -->
-        val configDir = context.filesDir.resolve(MPV_DIR).toString()
-        // ANZ <--
         it.setOptionString("config", "yes")
-        it.setOptionString("config-dir", configDir)
+        it.setOptionString("config-dir", context.filesDir.resolve(MPV_DIR).toString())
         it.setOptionString("gpu-shader-cache-dir", cachePath)
         it.setOptionString("icc-cache-dir", cachePath)
-        it.setOptionString("idle", "yes")
-        it.setOptionString("force-window", "no")
         it.setOptionString("keep-open", "yes")
     }
 
@@ -480,13 +475,10 @@ class PlayerViewModel @JvmOverloads constructor(
             .onEach(::setAnimeSkipIntroLength)
             .launchIn(viewModelScope)
 
-        // ANZ -->
         mpv.propFlow<MPVNode>("track-list")
             .filterNotNull()
-            .flowOn(Dispatchers.Default)
             .onEach { onTrackListChanged(it) }
             .launchIn(viewModelScope)
-        // ANZ <--
 
         // ANZ -->
         viewModelScope.launchIO {
@@ -815,19 +807,15 @@ class PlayerViewModel @JvmOverloads constructor(
                         )
                     }
                 } else {
-                    // ANZ -->
-                    selectSubById(track.id)
                     hasLoadedSubs.update { _ -> true }
                     checkFileLoaded()
-                    // ANZ <--
+                    selectSubById(track.id)
                 }
             }
             is VideoTrack.Internal -> {
-                // ANZ -->
-                selectSubById(track.data.id)
                 hasLoadedSubs.update { _ -> true }
                 checkFileLoaded()
-                // ANZ <--
+                selectSubById(track.data.id)
             }
         }
     }
@@ -848,19 +836,15 @@ class PlayerViewModel @JvmOverloads constructor(
                         )
                     }
                 } else {
-                    // ANZ -->
-                    selectAudioById(track.id)
                     hasLoadedAudio.update { _ -> true }
                     checkFileLoaded()
-                    // ANZ <--
+                    selectAudioById(track.id)
                 }
             }
             is VideoTrack.Internal -> {
-                // ANZ -->
-                selectAudioById(track.data.id)
                 hasLoadedAudio.update { _ -> true }
                 checkFileLoaded()
-                // ANZ <--
+                selectAudioById(track.data.id)
             }
         }
     }

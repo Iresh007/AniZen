@@ -1,11 +1,9 @@
 package eu.kanade.tachiyomi.ui.player
 
-import android.widget.Toast
-import eu.kanade.tachiyomi.util.system.toast
 import `is`.xyz.mpv.MPV
 import `is`.xyz.mpv.MPVNode
 import logcat.LogPriority
-import tachiyomi.core.common.util.system.logcat
+import logcat.logcat
 
 // ANZ -->
 class PlayerObserver(val activity: PlayerActivity) :
@@ -13,46 +11,43 @@ class PlayerObserver(val activity: PlayerActivity) :
     MPV.LogObserver {
 
     override fun eventProperty(property: String) {
+        activity.runOnUiThread { activity.onObserverEvent(property) }
     }
 
     override fun eventProperty(property: String, value: Long) {
+        activity.runOnUiThread { activity.onObserverEvent(property, value) }
     }
 
     override fun eventProperty(property: String, value: Boolean) {
-        if (property == "pause" || property == "eof-reached") {
-            activity.runOnUiThread { activity.onObserverEvent(property, value) }
-        }
+        activity.runOnUiThread { activity.onObserverEvent(property, value) }
     }
 
     override fun eventProperty(property: String, value: String) {
-        if (property.startsWith("user-data/aniyomi")) {
-            activity.runOnUiThread { activity.onObserverEvent(property, value) }
-        }
+        activity.runOnUiThread { activity.onObserverEvent(property, value) }
     }
 
     override fun eventProperty(property: String, value: Double) {
-        if (property == "video-params/aspect") {
-            activity.runOnUiThread { activity.onObserverEvent(property, value) }
-        }
+        activity.runOnUiThread { activity.onObserverEvent(property, value) }
     }
 
     override fun eventProperty(property: String, value: MPVNode) {
+        activity.runOnUiThread { activity.onObserverEvent(property, value) }
     }
 
     override fun event(eventId: Int, data: MPVNode) {
-        activity.runOnUiThread { activity.event(eventId, data) }
+        activity.event(eventId, data)
     }
-
-    var httpError: String? = null
 
     override fun logMessage(prefix: String, level: Int, text: String) {
         if (level == MPV.mpvLogLevel.MPV_LOG_LEVEL_ERROR) {
             if (text.startsWith(TRACK_LOAD_FAILURE)) {
                 val url = text.removePrefix(TRACK_LOAD_FAILURE).substringBeforeLast(".")
-                activity.runOnUiThread {
-                    activity.onTrackLoadedFailure(url)
-                }
+                activity.onTrackLoadedFailure(url)
             }
+        }
+
+        if (prefix == "ffmpeg" && text.startsWith("Failed to open an HTTP connection:")) {
+            httpError = text.removePrefix("Failed to open an HTTP connection: ")
         }
 
         val logPriority = when (level) {
@@ -61,9 +56,10 @@ class PlayerObserver(val activity: PlayerActivity) :
             MPV.mpvLogLevel.MPV_LOG_LEVEL_INFO -> LogPriority.INFO
             else -> LogPriority.VERBOSE
         }
-        if (text.contains("HTTP error")) httpError = text.removePrefix("http: ")
-        logcat.logcat("mpv/$prefix", logPriority) { text }
+        logcat("mpv/$prefix", logPriority) { text }
     }
+
+    var httpError: String? = null
 
     companion object {
         const val TRACK_LOAD_FAILURE = "Can not open external file "

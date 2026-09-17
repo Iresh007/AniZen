@@ -280,16 +280,7 @@ class PlayerActivity : BaseActivity() {
         setupMediaSession()
         setupPlayerOrientation()
 
-        // ANZ -->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-            powerManager?.addThermalStatusListener { status ->
-                if (status >= android.os.PowerManager.THERMAL_STATUS_SEVERE) {
-                    player.checkAdaptiveScaling(Long.MAX_VALUE)
-                }
-            }
-        }
-        // ANZ <--
+
 
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             runOnUiThread {

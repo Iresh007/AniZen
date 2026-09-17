@@ -30,10 +30,8 @@ import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
 import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
+import eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
-import eu.kanade.tachiyomi.ui.player.applyAnime4K
-import eu.kanade.tachiyomi.ui.player.utils.Anime4KManager
-import eu.kanade.tachiyomi.util.system.DeviceTierManager
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPV
@@ -50,10 +48,8 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     private val audioPreferences: AudioPreferences by injectLazy()
     private val advancedPreferences: AdvancedPlayerPreferences by injectLazy()
     private val networkPreferences: NetworkPreferences by injectLazy()
-    private val anime4kManager: Anime4KManager by injectLazy()
 
     var isExiting = false
-    private var lastAdaptiveCheckTime = 0L
 
     private val optionNameRegex = Regex("""^(?:--)?([\w-]+)(?:=|$)""", RegexOption.MULTILINE)
     private val mpvOptionNames = optionNameRegex.findAll(advancedPreferences.mpvConf().get()).map {
@@ -94,100 +90,18 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         }
     }
 
-    private var currentMaxBytes = 192 * 1024 * 1024L
-    private var currentMaxBackBytes = 64 * 1024 * 1024L
-
-    fun applyPlaybackStrategy() {
-        val performanceProfile = decoderPreferences.performanceProfile().get()
-        val tier = when (performanceProfile) {
-            PlayerEfficiency.MaxPerformance -> DeviceTierManager.Tier.HIGH
-            PlayerEfficiency.Balanced -> DeviceTierManager.Tier.MID
-            PlayerEfficiency.PowerSaver -> DeviceTierManager.Tier.LOW
-            else -> DeviceTierManager.getTier(context)
-        }
-
-        val (maxMb, maxBackMb, readahead) = when (tier) {
-            DeviceTierManager.Tier.LOW -> Triple(64, 32, 60)
-            DeviceTierManager.Tier.MID -> Triple(128, 64, 120)
-            DeviceTierManager.Tier.HIGH -> Triple(192, 128, 180)
-        }
-
-        currentMaxBytes = maxMb * 1024 * 1024L
-        currentMaxBackBytes = maxBackMb * 1024 * 1024L
-
-        setSafeOptionString("demuxer-readahead-secs", "$readahead")
-        setSafeOptionString("demuxer-max-bytes", "$currentMaxBytes")
-        setSafeOptionString("demuxer-max-back-bytes", "$currentMaxBackBytes")
-    }
-
-    fun restoreCache() {
-        runCatching {
-            mpv?.setPropertyString("demuxer-max-bytes", "$currentMaxBytes")
-            mpv?.setPropertyString("demuxer-max-back-bytes", "$currentMaxBackBytes")
-        }
-    }
-
-    fun shrinkCache() {
-        runCatching {
-            val shrinkBytes = 64 * 1024 * 1024L
-            mpv?.setPropertyString("demuxer-max-bytes", "$shrinkBytes")
-            mpv?.setPropertyString("demuxer-max-back-bytes", "$shrinkBytes")
-        }
-    }
-
     fun init(mpvInst: MPV) {
         this.mpv = mpvInst
-        val targetVo = if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu"
-        setVo(targetVo)
+        setVo(if (decoderPreferences.gpuNext().get()) "gpu-next" else "gpu")
         mpv?.setPropertyBoolean("pause", true)
         setSafeOptionString("profile", "fast")
-
-        // ANZ -->
         mpv?.setOptionString("hwdec", if (decoderPreferences.tryHWDecoding().get()) "auto" else "no")
-        val isSmoothMotion = decoderPreferences.smoothMotion().get()
-        // ANZ <--
-
-        // Scaling quality
-        val isHighQuality = decoderPreferences.highQualityScaling().get()
-        val scaler = if (isHighQuality) "spline36" else "bilinear"
-        setSafeOptionString("scale", scaler)
-        setSafeOptionString("cscale", scaler)
-        setSafeOptionString("dscale", scaler)
-        setSafeOptionString("dither", if (isHighQuality) "fruit" else "no")
-
-        if (isSmoothMotion) {
-            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
-            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                context.display
-            } else {
-                @Suppress("DEPRECATION")
-                windowManager?.defaultDisplay
-            }
-            val detectedRefreshRate = display?.refreshRate?.takeIf { it > 0 } ?: 60f
-            val fpsLimit = decoderPreferences.interpolationFPSLimit().get()
-            val targetFps = if (fpsLimit > 0) fpsLimit.toDouble() else detectedRefreshRate.toDouble()
-
-            mpv?.setOptionString("video-sync", "display-resample")
-            mpv?.setOptionString("interpolation", "yes")
-            mpv?.setOptionString("correct-pts", "yes")
-            mpv?.setOptionString("tscale", decoderPreferences.interpolationMode().get().value)
-            mpv?.setOptionString("display-fps", targetFps.toString())
-            mpv?.setOptionString("override-display-fps", targetFps.toString())
-        } else {
-            mpv?.setOptionString("video-sync", "audio")
-            mpv?.setOptionString("interpolation", "no")
-        }
 
         if (decoderPreferences.useYUV420P().get()) {
             mpv?.setOptionString("vf", "format=yuv420p")
         }
-
-        if (decoderPreferences.enableAnime4K().get()) {
-            anime4kManager.initialize()
-            applyAnime4K(mpv, decoderPreferences, anime4kManager, isInit = true)
-        }
-
         mpv?.setOptionString("msg-level", "all=" + if (networkPreferences.verboseLogging().get()) "v" else "warn")
+
         mpv?.setPropertyBoolean("input-default-bindings", true)
 
         mpv?.setOptionString("idle", "yes")
@@ -195,12 +109,14 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         setSafeOptionString("tls-verify", "yes")
         setSafeOptionString("tls-ca-file", "${context.filesDir.path}/${MpvConfig.MPV_DIR}/cacert.pem")
 
-
-        // Track selection handled reactively by ViewModel
+        // We handle selecting this in the viewmodel
         mpv?.setOptionString("sid", "no")
         mpv?.setOptionString("aid", "no")
 
-        applyPlaybackStrategy()
+        // Limit demuxer cache since the defaults are too high for mobile devices
+        val cacheMegs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) 64 else 32
+        setSafeOptionString("demuxer-max-bytes", "${cacheMegs * 1024 * 1024}")
+        setSafeOptionString("demuxer-max-back-bytes", "${cacheMegs * 1024 * 1024}")
 
         val screenshotDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
         screenshotDir.mkdirs()
@@ -208,12 +124,11 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
 
         VideoFilters.entries.forEach {
             val value = it.preference(decoderPreferences).get()
-            if (value != 0 && !it.mpvProperty.startsWith("vf_")) {
-                mpv?.setOptionString(it.mpvProperty, value.toString())
-            }
+            mpv?.setOptionString(it.mpvProperty, value.toString())
         }
 
         mpv?.setOptionString("speed", playerPreferences.playerSpeed().get().toString())
+        // workaround for <https://github.com/mpv-player/mpv/issues/14651>
         setSafeOptionString("vd-lavc-film-grain", "cpu")
 
         postInitOptions()
@@ -223,9 +138,7 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     }
 
     fun observeProperties() {
-        for ((name, format) in observedProps) {
-            mpv?.observeProperty(name, format)
-        }
+        for ((name, format) in observedProps) mpv?.observeProperty(name, format)
     }
 
     fun postInitOptions() {
@@ -236,48 +149,49 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         }
 
         advancedPreferences.playerStatisticsPage().get().let {
-            if (it in 1..5) {
+            if (it != 0) {
                 mpv?.command("script-binding", "stats/display-stats-toggle")
                 mpv?.command("script-binding", "stats/display-page-$it")
-            } else if (it == 6 || it == 0) {
-                mpv?.setPropertyString("user-data/stats/display-page", "0")
-            }
-        }
-    }
-
-    fun checkAdaptiveScaling(delayedFrames: Long) {
-        if (!decoderPreferences.adaptiveShaderScaling().get() || !decoderPreferences.enableAnime4K().get() || PlayerStats.isAdaptiveDowngraded.value) return
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastAdaptiveCheckTime < 5000) return
-        lastAdaptiveCheckTime = currentTime
-        if (delayedFrames > 10 && decoderPreferences.anime4kQuality().get() == "HIGH") {
-            decoderPreferences.anime4kQuality().set("BALANCED")
-            applyAnime4K(mpv, decoderPreferences, anime4kManager)
-            PlayerStats.isAdaptiveDowngraded.value = true
-            (context as? PlayerActivity)?.runOnUiThread {
-                (context as? PlayerActivity)?.showToast("Performance: Anime4K downgraded to Balanced")
             }
         }
     }
 
     fun onKey(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_MULTIPLE || KeyEvent.isModifierKey(event.keyCode)) return false
+        if (event.action == KeyEvent.ACTION_MULTIPLE || KeyEvent.isModifierKey(event.keyCode)) {
+            return false
+        }
+
         var mapped = KeyMapping[event.keyCode]
         if (mapped == null) {
-            if (!event.isPrintingKey) return false
+            // Fallback to produced glyph
+            if (!event.isPrintingKey) {
+                if (event.repeatCount == 0) {
+                    logcat(LogPriority.DEBUG) { "Unmapped non-printable key ${event.keyCode}" }
+                }
+                return false
+            }
+
             val ch = event.unicodeChar
-            if (ch.and(KeyCharacterMap.COMBINING_ACCENT) != 0) return false
+            if (ch.and(KeyCharacterMap.COMBINING_ACCENT) != 0) {
+                return false // dead key
+            }
             mapped = ch.toChar().toString()
         }
-        if (event.repeatCount > 0) return true
+
+        if (event.repeatCount > 0) {
+            return true // eat event but ignore it, mpv has its own key repeat
+        }
+
         val mod: MutableList<String> = mutableListOf()
         event.isShiftPressed && mod.add("shift")
         event.isCtrlPressed && mod.add("ctrl")
         event.isAltPressed && mod.add("alt")
         event.isMetaPressed && mod.add("meta")
+
         val action = if (event.action == KeyEvent.ACTION_DOWN) "keydown" else "keyup"
         mod.add(mapped)
         mpv?.command(action, mod.joinToString("+"))
+
         return true
     }
 
@@ -311,17 +225,17 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
     }
 
     private fun setupSubtitlesOptions() {
-        mpv?.setOptionString("slang", subtitlePreferences.preferredSubLanguages().get())
         mpv?.setOptionString("sub-delay", (subtitlePreferences.subtitlesDelay().get() / 1000.0).toString())
         mpv?.setOptionString("sub-speed", subtitlePreferences.subtitlesSpeed().get().toString())
         mpv?.setOptionString(
             "secondary-sub-delay",
             (subtitlePreferences.subtitlesSecondaryDelay().get() / 1000.0).toString(),
         )
+
         mpv?.setOptionString("sub-font", subtitlePreferences.subtitleFont().get())
         subtitlePreferences.overrideSubsASS().get().let {
-            if (it != eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride.No) {
-                mpv?.setOptionString("sub-ass-override", it.value)
+            mpv?.setOptionString("sub-ass-override", it.value)
+            if (it != SubtitleAssOverride.No) {
                 mpv?.setOptionString("sub-ass-justify", "yes")
             }
         }
@@ -330,11 +244,12 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         mpv?.setOptionString("sub-italic", if (subtitlePreferences.italicSubtitles().get()) "yes" else "no")
         mpv?.setOptionString("sub-justify", subtitlePreferences.subtitleJustification().get().value)
         mpv?.setOptionString("sub-color", subtitlePreferences.textColorSubtitles().get().toColorHexString())
-        mpv?.setOptionString("sub-back-color", subtitlePreferences.backgroundColorSubtitles().get().toColorHexString())
-        // ANZ -->
+        mpv?.setOptionString(
+            "sub-back-color",
+            subtitlePreferences.backgroundColorSubtitles().get().toColorHexString(),
+        )
         mpv?.setOptionString("sub-outline-color", subtitlePreferences.borderColorSubtitles().get().toColorHexString())
         mpv?.setOptionString("sub-outline-size", subtitlePreferences.subtitleBorderSize().get().toString())
-        // ANZ <--
         mpv?.setOptionString("sub-border-style", subtitlePreferences.borderStyleSubtitles().get().value)
         mpv?.setOptionString("sub-shadow-offset", subtitlePreferences.shadowOffsetSubtitles().get().toString())
         mpv?.setOptionString("sub-pos", subtitlePreferences.subtitlePos().get().toString())
