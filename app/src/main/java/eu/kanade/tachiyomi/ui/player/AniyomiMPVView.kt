@@ -195,16 +195,6 @@ class AniyomiMPVView(context: Context, attributes: AttributeSet?) : BaseMPVView(
         setSafeOptionString("tls-verify", "yes")
         setSafeOptionString("tls-ca-file", "${context.filesDir.path}/${MpvConfig.MPV_DIR}/cacert.pem")
 
-        // ANZ -->
-        // Point libass at our provisioned internal fonts dir for user custom fonts.
-        // sub-font-provider is left at its default (fontconfig) so embedded ASS fonts
-        // and plain-text subs continue to resolve.  The old fonts.conf alias to non-existent
-        // Roboto/NotoSans was already deleted by provisionSync(), so fontconfig now resolves
-        // "Sans Serif" correctly via system fonts on all devices.
-        val internalFontsDir = "${context.filesDir.path}/${MpvConfig.MPV_DIR}/${MpvConfig.MPV_FONTS_DIR}"
-        setSafeOptionString("sub-fonts-dir", internalFontsDir)
-        setSafeOptionString("osd-fonts-dir", internalFontsDir)
-        // ANZ <--
 
         // Track selection handled reactively by ViewModel
         mpv?.setOptionString("sid", "no")

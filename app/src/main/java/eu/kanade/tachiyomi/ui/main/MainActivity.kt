@@ -144,6 +144,10 @@ class MainActivity : BaseActivity() {
     private val connectionsPreferences: ConnectionsPreferences by injectLazy()
     // <-- AM (CONNECTIONS)
 
+    // ANK -->
+    private val mpvConfig: animiru.feature.mpvfiles.MpvConfig by injectLazy()
+    // ANK <--
+
     init {
         registerSecureActivity(this)
     }
@@ -372,6 +376,13 @@ class MainActivity : BaseActivity() {
             }
         }
     }
+
+    // ANK -->
+    override fun onResume() {
+        super.onResume()
+        mpvConfig.copyFiles()
+    }
+    // ANK <--
 
     @Composable
     private fun HandleOnNewIntent(context: Context, navigator: Navigator) {
