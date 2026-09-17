@@ -39,35 +39,40 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.player.components.PlayerSheet
 import eu.kanade.presentation.player.components.SliderItem
 import eu.kanade.presentation.player.components.SwitchPreference
-import eu.kanade.tachiyomi.ui.player.PlayerActivity
-import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
-import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.ank.AMR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
-import tachiyomi.presentation.core.util.collectAsState
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
+// ANZ -->
 @Composable
 fun PlaybackSpeedSheet(
+    pitchCorrection: Boolean,
+    onPitchCorrectionChange: (Boolean) -> Unit,
     speed: Float,
+    speedPresets: List<Float>,
     onSpeedChange: (Float) -> Unit,
+    onAddSpeedPreset: (Float) -> Unit,
+    onRemoveSpeedPreset: (Float) -> Unit,
+    onResetPresets: () -> Unit,
+    longPressSpeed: Float,
+    longPressSpeedPresets: List<Float>,
+    onLongPressSpeedChange: (Float) -> Unit,
+    onAddLongPressSpeedPreset: (Float) -> Unit,
+    onRemoveLongPressSpeedPreset: (Float) -> Unit,
+    onResetLongPressPresets: () -> Unit,
+    onMakeDefault: (Float) -> Unit,
+    onResetDefault: () -> Unit,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val preferences = remember { Injekt.get<PlayerPreferences>() }
-    val audioPreferences = remember { Injekt.get<AudioPreferences>() }
     PlayerSheet(onDismissRequest = onDismissRequest) {
         Column(
             modifier
@@ -82,7 +87,6 @@ fun PlaybackSpeedSheet(
                 max = 6f,
                 min = 0.01f,
             )
-            val playbackSpeedPresets by preferences.speedPresets().collectAsState()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -90,9 +94,7 @@ fun PlaybackSpeedSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.medium),
             ) {
-                FilledTonalIconButton(onClick = {
-                    preferences.speedPresets().delete()
-                }) {
+                FilledTonalIconButton(onClick = onResetPresets) {
                     Icon(Icons.Default.RestartAlt, null)
                 }
                 LazyRow(
@@ -100,12 +102,9 @@ fun PlaybackSpeedSheet(
                         .weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
                 ) {
-                    items(
-                        items = playbackSpeedPresets.map { it.toFloat() }.distinct().sorted(),
-                        key = { "speed-$it" },
-                    ) {
+                    items(speedPresets, key = { "speed-$it" }) {
                         InputChip(
-                            selected = speed == it,
+                            selected = speed.toFixed(2) == it.toFixed(2),
                             onClick = { onSpeedChange(it) },
                             label = { Text(stringResource(MR.strings.player_speed, it)) },
                             modifier = Modifier
@@ -114,39 +113,25 @@ fun PlaybackSpeedSheet(
                                 Icon(
                                     Icons.Default.Close,
                                     null,
-                                    modifier = Modifier
-                                        .clickable {
-                                            preferences.speedPresets().set(
-                                                playbackSpeedPresets.minus(it.toFixed(2).toString()),
-                                            )
-                                        },
+                                    modifier = Modifier.clickable { onRemoveSpeedPreset(it.toFixed(2)) },
                                 )
                             },
                         )
                     }
                 }
-                FilledTonalIconButton(
-                    onClick = {
-                        preferences.speedPresets().set(playbackSpeedPresets.plus(speed.toFixed(2).toString()))
-                    },
-                ) {
+                FilledTonalIconButton(onClick = { onAddSpeedPreset(speed.toFixed(2)) }) {
                     Icon(Icons.Default.Add, null)
                 }
             }
-            
-            val pitchCorrection by audioPreferences.enablePitchCorrection().collectAsState()
-            val longPressSpeed by preferences.playerSpeedLongPress().collectAsState()
-            
+
             SliderItem(
-                label = "Long press speed",
+                label = stringResource(AMR.strings.player_sheets_speed_long_press),
                 value = longPressSpeed,
                 valueText = stringResource(MR.strings.player_speed, longPressSpeed),
-                onChange = { preferences.playerSpeedLongPress().set(it) },
+                onChange = onLongPressSpeedChange,
                 max = 6f,
                 min = 0.01f,
             )
-
-            val longPressSpeedPresets by preferences.longPressSpeedPresets().collectAsState()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,9 +139,7 @@ fun PlaybackSpeedSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.medium),
             ) {
-                FilledTonalIconButton(onClick = {
-                    preferences.longPressSpeedPresets().delete()
-                }) {
+                FilledTonalIconButton(onClick = onResetLongPressPresets) {
                     Icon(Icons.Default.RestartAlt, null)
                 }
                 LazyRow(
@@ -164,13 +147,10 @@ fun PlaybackSpeedSheet(
                         .weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
                 ) {
-                    items(
-                        items = longPressSpeedPresets.map { it.toFloat() }.distinct().sorted(),
-                        key = { "lp-speed-$it" },
-                    ) {
+                    items(longPressSpeedPresets, key = { "lp-speed-$it" }) {
                         InputChip(
-                            selected = longPressSpeed == it,
-                            onClick = { preferences.playerSpeedLongPress().set(it) },
+                            selected = longPressSpeed.toFixed(2) == it.toFixed(2),
+                            onClick = { onLongPressSpeedChange(it) },
                             label = { Text(stringResource(MR.strings.player_speed, it)) },
                             modifier = Modifier
                                 .animateItem(),
@@ -178,36 +158,20 @@ fun PlaybackSpeedSheet(
                                 Icon(
                                     Icons.Default.Close,
                                     null,
-                                    modifier = Modifier
-                                        .clickable {
-                                            preferences.longPressSpeedPresets().set(
-                                                longPressSpeedPresets.minus(it.toFixed(2).toString()),
-                                            )
-                                        },
+                                    modifier = Modifier.clickable { onRemoveLongPressSpeedPreset(it.toFixed(2)) },
                                 )
                             },
                         )
                     }
                 }
-                FilledTonalIconButton(
-                    onClick = {
-                        preferences.longPressSpeedPresets().set(longPressSpeedPresets.plus(longPressSpeed.toFixed(2).toString()))
-                    },
-                ) {
+                FilledTonalIconButton(onClick = { onAddLongPressSpeedPreset(longPressSpeed.toFixed(2)) }) {
                     Icon(Icons.Default.Add, null)
                 }
             }
 
-            val activity = LocalContext.current as? PlayerActivity
-            val mpv = activity?.viewModel?.mpv
             SwitchPreference(
                 value = pitchCorrection,
-                onValueChange = {
-                    audioPreferences.enablePitchCorrection().set(it)
-                    // ANZ -->
-                    mpv?.setPropertyBoolean("audio-pitch-correction", it)
-                    // ANZ <--
-                },
+                onValueChange = onPitchCorrectionChange,
                 content = {
                     Column(
                         modifier = Modifier.weight(1f),
@@ -229,17 +193,11 @@ fun PlaybackSpeedSheet(
             ) {
                 Button(
                     modifier = Modifier.weight(1f),
-                    onClick = { preferences.playerSpeed().set(speed) },
+                    onClick = { onMakeDefault(speed) },
                 ) {
                     Text(text = stringResource(MR.strings.player_sheets_speed_make_default))
                 }
-                FilledIconButton(
-                    onClick = {
-                        preferences.playerSpeed().delete()
-                        preferences.playerSpeedLongPress().delete()
-                        onSpeedChange(1f)
-                    },
-                ) {
+                FilledIconButton(onClick = onResetDefault) {
                     Icon(imageVector = Icons.Default.RestartAlt, contentDescription = null)
                 }
             }
@@ -251,3 +209,4 @@ fun Float.toFixed(precision: Int = 1): Float {
     val factor = 10.0f.pow(precision)
     return (this * factor).roundToInt() / factor
 }
+// ANZ <--

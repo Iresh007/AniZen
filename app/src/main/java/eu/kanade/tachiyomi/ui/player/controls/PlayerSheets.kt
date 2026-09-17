@@ -89,8 +89,24 @@ fun PlayerSheets(
     onUpdateDecoder: (Decoder) -> Unit,
 
     // Speed sheet
+    // ANZ -->
+    pitchCorrection: Boolean,
+    onPitchCorrectionChange: (Boolean) -> Unit,
     speed: Float,
+    speedPresets: ImmutableList<Float>,
     onSpeedChange: (Float) -> Unit,
+    onAddSpeedPreset: (Float) -> Unit,
+    onRemoveSpeedPreset: (Float) -> Unit,
+    onResetSpeedPresets: () -> Unit,
+    longPressSpeed: Float,
+    longPressSpeedPresets: ImmutableList<Float>,
+    onLongPressSpeedChange: (Float) -> Unit,
+    onAddLongPressSpeedPreset: (Float) -> Unit,
+    onRemoveLongPressSpeedPreset: (Float) -> Unit,
+    onResetLongPressSpeedPresets: () -> Unit,
+    onMakeDefaultSpeed: (Float) -> Unit,
+    onResetDefaultSpeed: () -> Unit,
+    // ANZ <--
 
     // More sheet
     sleepTimerTimeRemaining: Int,
@@ -228,11 +244,27 @@ fun PlayerSheets(
         }
 
         Sheets.PlaybackSpeed -> {
+            // ANZ -->
             PlaybackSpeedSheet(
-                speed,
+                pitchCorrection = pitchCorrection,
+                onPitchCorrectionChange = onPitchCorrectionChange,
+                speed = speed,
+                speedPresets = speedPresets,
                 onSpeedChange = onSpeedChange,
+                onAddSpeedPreset = onAddSpeedPreset,
+                onRemoveSpeedPreset = onRemoveSpeedPreset,
+                onResetPresets = onResetSpeedPresets,
+                longPressSpeed = longPressSpeed,
+                longPressSpeedPresets = longPressSpeedPresets,
+                onLongPressSpeedChange = onLongPressSpeedChange,
+                onAddLongPressSpeedPreset = onAddLongPressSpeedPreset,
+                onRemoveLongPressSpeedPreset = onRemoveLongPressSpeedPreset,
+                onResetLongPressPresets = onResetLongPressSpeedPresets,
+                onMakeDefault = onMakeDefaultSpeed,
+                onResetDefault = onResetDefaultSpeed,
                 onDismissRequest = onDismissRequest,
             )
+            // ANZ <--
         }
 
         Sheets.Screenshot -> {

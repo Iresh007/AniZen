@@ -371,11 +371,10 @@ private val FONT_EXTENSION_REGEX = Regex(""".*\.[ot]tf${'$'}""")
 fun resetTypography(mpv: MPV?, preferences: SubtitlePreferences) {
     mpv?.setPropertyBoolean("sub-bold", preferences.boldSubtitles().deleteAndGet())
     mpv?.setPropertyBoolean("sub-italic", preferences.italicSubtitles().deleteAndGet())
-    mpv?.setPropertyBoolean("sub-ass-justify", preferences.overrideSubsASS().deleteAndGet())
     mpv?.setPropertyString("sub-justify", preferences.subtitleJustification().deleteAndGet().value)
     mpv?.setPropertyString("sub-font", preferences.subtitleFont().deleteAndGet())
     mpv?.setPropertyInt("sub-font-size", preferences.subtitleFontSize().deleteAndGet())
-    mpv?.setPropertyInt("sub-border-size", preferences.subtitleBorderSize().deleteAndGet())
+    mpv?.setPropertyInt("sub-outline-size", preferences.subtitleBorderSize().deleteAndGet())
     mpv?.setPropertyInt("sub-shadow-offset", preferences.shadowOffsetSubtitles().deleteAndGet())
     mpv?.setPropertyString("sub-border-style", preferences.borderStyleSubtitles().deleteAndGet().value)
 }

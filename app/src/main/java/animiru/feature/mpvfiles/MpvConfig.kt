@@ -24,13 +24,15 @@ import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-// ANZ -->
 class MpvConfig(
     private val context: Context,
     private val storageManager: StorageManager,
     private val advancedPlayerPreferences: AdvancedPlayerPreferences,
     private val getCustomButtons: GetCustomButtons,
 ) {
+    // ANK -->
+    // A plain CoroutineScope lets any failure reach the default uncaught handler and kill the app,
+    // so the scope swallows and logs instead.
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO +
             CoroutineExceptionHandler { _, throwable ->
@@ -41,10 +43,19 @@ class MpvConfig(
     /** Number of live [eu.kanade.tachiyomi.ui.player.PlayerActivity] instances. */
     private val playerSessions = AtomicInteger(0)
     private val copyPending = AtomicBoolean(false)
+    // ANK <--
 
     private var copyJob: Job? = null
 
     fun copyFiles() {
+        // ANK -->
+        // Copying wipes the scripts/script-opts/shaders/fonts directories first, which must never
+        // happen underneath a running mpv instance. MainActivity stays resumed behind the player in
+        // picture-in-picture and split-screen, so defer while any player lives.
+        //
+        // A request that arrives mid-copy is deferred too: the copy may already have passed the
+        // directory it concerns, so it is recorded and replayed by the loop below instead of being
+        // dropped.
         if (playerSessions.get() > 0 || copyJob?.isActive == true) {
             copyPending.set(true)
             return
@@ -52,6 +63,8 @@ class MpvConfig(
 
         copyJob = scope.launchIO {
             do {
+                // Cleared at the start of the pass, so a request racing with it is recorded again
+                // and picked up by the loop condition rather than overwritten.
                 copyPending.set(false)
                 try {
                     val mpvDir = getMpvDir()
@@ -64,10 +77,14 @@ class MpvConfig(
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR, e) { "Failed to copy mpv files" }
                 }
+                // Bail out if a player started during the pass; onPlayerDestroyed() flushes the
+                // still-pending request once it is safe again.
             } while (copyPending.get() && playerSessions.get() == 0)
         }
+        // ANK <--
     }
 
+    // ANK -->
     /**
      * Suspends until any in-flight copy has finished, so mpv never initializes against a
      * directory tree that is still being deleted and rewritten.
@@ -86,6 +103,7 @@ class MpvConfig(
             copyFiles()
         }
     }
+    // ANK <--
 
     private fun getMpvDir(): UniFile {
         return UniFile.fromFile(context.filesDir)!!.createDirectory(MPV_DIR)!!
@@ -155,6 +173,8 @@ class MpvConfig(
     }
 
     private suspend fun copyFontsDirectory(mpvDir: UniFile) {
+        // TODO: I think this is a bad hack.
+        //  We need to find a way to let MPV directly access our fonts directory.
         val fontsDirectory = deleteAndGet(mpvDir, MPV_FONTS_DIR)
         copyDirectoryContents(storageManager.getFontsDirectory(), fontsDirectory)
     }
@@ -168,6 +188,8 @@ class MpvConfig(
             try {
                 ins = assetManager.open(filename, AssetManager.ACCESS_STREAMING)
                 val outFile = mpvDir.createFile(filename)!!
+                // Note that .available() officially returns an *estimated* number of bytes available
+                // this is only true for generic streams, asset streams return the full file size
                 if (outFile.length() == ins.available().toLong()) {
                     logcat(LogPriority.VERBOSE) { "Skipping copy of asset file (exists same size): $filename" }
                     continue
@@ -187,17 +209,25 @@ class MpvConfig(
     private fun writeFontsConf(context: Context, mpvDir: UniFile) {
         val parts = listOfNotNull(
             "<fontconfig>",
+            // Android system fonts reside here
             "<dir>/system/fonts/</dir>",
             "<dir>/product/fonts/</dir>",
+            // User provided fonts
+            // ANK -->
             mpvDir.createDirectory(MPV_FONTS_DIR)?.filePath?.let { filePath -> "<dir>$filePath</dir>" },
+            // ANK <--
+            // Point fontconfig to the right cache path so that caching works
             "<cachedir>${context.cacheDir.path}</cachedir>",
+            // Conveniently there is *no* Java API to query the system default fonts, but we can
+            // manually specify the font families we know Android uses and provides by default.
+            // (compare to 60-latin.conf shipped with fontconfig)
             "<alias><family>serif</family>",
             "<prefer><family>Noto Serif</family></prefer>",
             "</alias>",
             "<alias><family>Sans Serif</family>",
             "<prefer>",
             "<family>Roboto</family>",
-            "<family>Noto Sans</family>",
+            "<family>Noto Sans</family>", // other languages
             "</prefer>",
             "</alias>",
             "<alias><family>monospace</family>",
@@ -243,4 +273,3 @@ class MpvConfig(
         const val MPV_SHADERS_DIR = "shaders"
     }
 }
-// ANZ <--

@@ -46,6 +46,14 @@ import eu.kanade.tachiyomi.ui.player.PlayerActivity
 import eu.kanade.tachiyomi.ui.player.controls.CARDS_MAX_WIDTH
 import eu.kanade.tachiyomi.ui.player.controls.components.sheets.toFixed
 import eu.kanade.tachiyomi.ui.player.controls.panelCardsColors
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.BorderStyle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.Alignment
+import eu.kanade.tachiyomi.ui.player.settings.SubtitleAssOverride
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
 import `is`.xyz.mpv.MPV
 import tachiyomi.core.common.preference.deleteAndGet
@@ -76,21 +84,63 @@ fun SubtitlesMiscellaneousCard(
         colors = panelCardsColors(),
     ) {
         Column {
+            var selectingOverrideAss by remember { mutableStateOf(false) }
             var overrideAssSubs by remember {
-                mutableStateOf(mpv?.getPropertyString("sub-ass-override") == "force")
+                mutableStateOf(
+                    mpv?.getPropertyString("sub-ass-override")?.let { SubtitleAssOverride.byValue(it) }
+                        ?: preferences.overrideSubsASS().get(),
+                )
             }
-            SwitchPreference(
-                overrideAssSubs,
-                onValueChange = {
-                    overrideAssSubs = it
-                    preferences.overrideSubsASS().set(it)
-                    mpv?.setPropertyString("sub-ass-override", if (it) "force" else "scale")
-                },
-                content = { Text(stringResource(MR.strings.player_sheets_sub_override_ass)) },
-                modifier = Modifier
-                    .padding(MaterialTheme.padding.medium)
-                    .fillMaxWidth(),
-            )
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            onClick = {
+                                selectingOverrideAss = !selectingOverrideAss
+                            },
+                        )
+                        .padding(
+                            horizontal = MaterialTheme.padding.medium,
+                            vertical = MaterialTheme.padding.small,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.large),
+                ) {
+                    Icon(Icons.Default.BorderStyle, null)
+                    Column {
+                        Text(
+                            text = stringResource(MR.strings.player_sheets_sub_override_ass),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(overrideAssSubs.titleRes),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+                DropdownMenu(expanded = selectingOverrideAss, onDismissRequest = { selectingOverrideAss = false }) {
+                    SubtitleAssOverride.entries.forEach {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(it.titleRes)) },
+                            onClick = {
+                                overrideAssSubs = it
+                                preferences.overrideSubsASS().set(it)
+                                mpv?.setPropertyString("sub-ass-override", it.value)
+                                selectingOverrideAss = false
+                            },
+                            trailingIcon = {
+                                if (overrideAssSubs == it) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+            }
             var subScale by remember {
                 mutableStateOf(mpv?.getPropertyDouble("sub-scale")?.toFloat() ?: 1f)
             }
@@ -147,8 +197,10 @@ fun SubtitlesMiscellaneousCard(
                             subScale = it
                             mpv?.setPropertyDouble("sub-scale", it.toDouble())
                         }
-                        preferences.overrideSubsASS().deleteAndGet().let { overrideAssSubs = it }
-                        mpv?.setPropertyString("sub-ass-override", "scale") // mpv's default is 'scale'
+                        preferences.overrideSubsASS().deleteAndGet().let {
+                            overrideAssSubs = it
+                            mpv?.setPropertyString("sub-ass-override", it.value)
+                        }
                     },
                 ) {
                     Row {

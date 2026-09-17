@@ -86,9 +86,11 @@ fun MiddlePlayerControls(
             }
         }
 
-        val icon = AnimatedImageVector.animatedVectorResource(R.drawable.anim_play_to_pause)
-        val interaction = remember { MutableInteractionSource() }
+        // ANZ -->
         when {
+            (isLoading || isLoadingEpisode) && showLoadingCircle -> {
+                CircularProgressIndicator(Modifier.size(96.dp))
+            }
             isStopped -> {
                 Spacer(Modifier.size(96.dp))
             }
@@ -109,36 +111,30 @@ fun MiddlePlayerControls(
             }
 
             else -> {
-                Box(
-                    modifier = Modifier.size(96.dp),
-                    contentAlignment = Alignment.Center
+                val icon = AnimatedImageVector.animatedVectorResource(R.drawable.anim_play_to_pause)
+                val interaction = remember { MutableInteractionSource() }
+                AnimatedVisibility(
+                    visible = controlsShown && !areControlsLocked,
+                    enter = enter,
+                    exit = exit,
                 ) {
-                    val showLoading = (isLoading || isLoadingEpisode) && showLoadingCircle
-                    if (showLoading) {
-                        CircularProgressIndicator(Modifier.size(96.dp))
-                    }
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = controlsShown && !areControlsLocked && !showLoading,
-                        enter = enter,
-                        exit = exit,
-                    ) {
-                        Image(
-                            painter = rememberAnimatedVectorPainter(icon, !paused),
-                            modifier = Modifier
-                                .size(96.dp)
-                                .clip(CircleShape)
-                                .clickable(
-                                    interaction,
-                                    ripple(),
-                                    onClick = onPlayPauseClick,
-                                )
-                                .padding(MaterialTheme.padding.medium),
-                            contentDescription = null,
-                        )
-                    }
+                    Image(
+                        painter = rememberAnimatedVectorPainter(icon, !paused),
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .clickable(
+                                interaction,
+                                ripple(),
+                                onClick = onPlayPauseClick,
+                            )
+                            .padding(MaterialTheme.padding.medium),
+                        contentDescription = null,
+                    )
                 }
             }
         }
+        // ANZ <--
 
         AnimatedVisibility(
             visible = controlsShown && !areControlsLocked,

@@ -247,7 +247,9 @@ fun GestureHandler(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
                     val startPosition = down.position
-                    originalSpeed = viewModel.playbackSpeed.value
+                    // ANZ -->
+                    originalSpeed = viewModel.playbackSpeed.value ?: playerPreferences.playerSpeed().get()
+                    // ANZ <--
                     wasPaused = false
                     isSpeedLongPress = false
                     

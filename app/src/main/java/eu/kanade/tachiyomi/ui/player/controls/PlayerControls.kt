@@ -97,8 +97,12 @@ import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
 import exh.log.InterpolationStatsOverlay
 import `is`.xyz.mpv.MPV
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import tachiyomi.core.common.preference.deleteAndGet
+import tachiyomi.core.common.preference.minusAssign
+import tachiyomi.core.common.preference.plusAssign
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
@@ -138,13 +142,19 @@ fun PlayerControls(
     val controlsShown by viewModel.controlsShown.collectAsState()
     val areControlsLocked by viewModel.areControlsLocked.collectAsState()
     val seekBarShown by viewModel.seekBarShown.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
     val pausedForCache by viewModel.pausedForCache.collectAsState()
+    // ANZ -->
+    val coreIdle by viewModel.coreIdle.collectAsState()
+    val seeking by viewModel.seeking.collectAsState()
+    // ANZ <--
     val isLoadingEpisode by viewModel.isLoadingEpisode.collectAsState()
     val isStopped by viewModel.isStopped.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val position by viewModel.pos.collectAsState()
     val paused by viewModel.paused.collectAsState()
+    // ANZ -->
+    val showLoadingCircle by playerPreferences.showLoadingCircle().collectAsState()
+    // ANZ <--
     val gestureSeekAmount by viewModel.gestureSeekAmount.collectAsState()
     val doubleTapSeekAmount by viewModel.doubleTapSeekAmount.collectAsState()
     val showDoubleTapOvals by playerPreferences.showDoubleTapOvals().collectAsState()
@@ -161,6 +171,11 @@ fun PlayerControls(
     val playerTimeToDisappear by playerPreferences.playerTimeToDisappear().collectAsState()
     var resetControls by remember { mutableStateOf(true) }
     val isSeekingUI by viewModel.isSeekingUI.collectAsState()
+    // ANZ -->
+    val isBuffering = (pausedForCache == true) ||
+        (seeking == true && !isSeekingUI) ||
+        (coreIdle == true && paused == false && !isSeekingUI)
+    // ANZ <--
     val seekPosition by viewModel.seekPosition.collectAsState()
     val chaptersList = chapters
 
@@ -396,10 +411,11 @@ fun PlayerControls(
                     )
                 }
                 val isLongPressing by viewModel.isLongPressing.collectAsState()
-                 AnimatedVisibility(
+                // ANZ -->
+                AnimatedVisibility(
                     visible = (
                         (controlsShown && !areControlsLocked || gestureSeekAmount != null) ||
-                            ((isLoading || pausedForCache == true) && !isStopped) ||
+                            (isBuffering && !isStopped) ||
                             isLoadingEpisode
                         ) && !isLongPressing,
                     enter = fadeIn(playerControlsEnterAnimationSpec()),
@@ -411,14 +427,13 @@ fun PlayerControls(
                         bottom.linkTo(parent.bottom)
                     },
                 ) {
-                    val showLoadingCircle by playerPreferences.showLoadingCircle().collectAsState()
                     MiddlePlayerControls(
                         hasPrevious = hasPreviousEpisode,
                         onSkipPrevious = { viewModel.changeEpisode(true) },
                         hasNext = hasNextEpisode,
                         onSkipNext = { viewModel.changeEpisode(false) },
                         isStopped = isStopped,
-                        isLoading = isLoading || pausedForCache == true,
+                        isLoading = isBuffering,
                         isLoadingEpisode = isLoadingEpisode,
                         controlsShown = controlsShown,
                         areControlsLocked = areControlsLocked,
@@ -430,6 +445,7 @@ fun PlayerControls(
                         exit = fadeOut(playerControlsExitAnimationSpec()),
                     )
                 }
+                // ANZ <--
                 AnimatedVisibility(
                     visible = (controlsShown || seekBarShown) && !areControlsLocked && !isLongPressing,
                     enter = if (!reduceMotion) {
@@ -497,7 +513,9 @@ fun PlayerControls(
                         }
 
                         val invertDuration by playerPreferences.invertDuration().collectAsState()
-                    val readAhead by viewModel.readAhead.collectAsState()
+                        // ANZ -->
+                        val readAhead by viewModel.demuxerCacheTime.collectAsState()
+                        // ANZ <--
                     val preciseSeeking by gesturePreferences.playerSmoothSeek().collectAsState()
 
                     var wasPlayerAlreadyPause by remember { mutableStateOf(false) }
@@ -532,7 +550,7 @@ fun PlayerControls(
                     SeekbarWithTimers(
                         position = sliderPosition,
                         duration = totalDuration,
-                        readAheadValue = readAhead,
+                        readAheadValue = readAhead ?: 0f,
                         onValueChange = {
                             if (!viewModel.isSeekingUI.value) {
                                 wasPlayerAlreadyPause = viewModel.paused.value == true
@@ -768,7 +786,13 @@ fun PlayerControls(
         val highlightDefaultStream = perAnimeDefaultStream && showDefaultStreamHighlight
         val autoScrollToDefault = perAnimeDefaultStream && autoScrollDefaultStream
         val decoder by viewModel.currentDecoder.collectAsState()
-        val speed by viewModel.playbackSpeed.collectAsState()
+        // ANZ -->
+        val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+        val speedPresets by playerPreferences.speedPresets().collectAsState()
+        val longPressSpeed by playerPreferences.playerSpeedLongPress().collectAsState()
+        val longPressSpeedPresets by playerPreferences.longPressSpeedPresets().collectAsState()
+        val pitchCorrection by audioPreferences.enablePitchCorrection().collectAsState()
+        // ANZ <--
         val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
         val showSubtitles by subtitlePreferences.screenshotSubtitles().collectAsState()
         val showFailedHosters by playerPreferences.showFailedHosters().collectAsState()
@@ -807,9 +831,30 @@ fun PlayerControls(
             },
             decoder = decoder,
             onUpdateDecoder = viewModel::updateDecoder,
-            speed = speed,
             // ANZ -->
+            pitchCorrection = pitchCorrection,
+            onPitchCorrectionChange = {
+                audioPreferences.enablePitchCorrection().set(it)
+                viewModel.mpv.setPropertyBoolean("audio-pitch-correction", it)
+            },
+            speed = playbackSpeed ?: playerPreferences.playerSpeed().get(),
+            speedPresets = speedPresets.map { it.toFloat() }.sorted().toPersistentList(),
             onSpeedChange = { viewModel.mpv.setPropertyDouble("speed", it.toFixed(2).toDouble()) },
+            onMakeDefaultSpeed = { playerPreferences.playerSpeed().set(it.toFixed(2)) },
+            onAddSpeedPreset = { playerPreferences.speedPresets() += it.toFixed(2).toString() },
+            onRemoveSpeedPreset = { playerPreferences.speedPresets() -= it.toFixed(2).toString() },
+            onResetSpeedPresets = playerPreferences.speedPresets()::delete,
+            longPressSpeed = longPressSpeed,
+            longPressSpeedPresets = longPressSpeedPresets.map { it.toFloat() }.sorted().toPersistentList(),
+            onLongPressSpeedChange = { playerPreferences.playerSpeedLongPress().set(it.toFixed(2)) },
+            onAddLongPressSpeedPreset = { playerPreferences.longPressSpeedPresets() += it.toFixed(2).toString() },
+            onRemoveLongPressSpeedPreset = { playerPreferences.longPressSpeedPresets() -= it.toFixed(2).toString() },
+            onResetLongPressSpeedPresets = playerPreferences.longPressSpeedPresets()::delete,
+            onResetDefaultSpeed = {
+                val defaultSpeed = playerPreferences.playerSpeed().deleteAndGet().toFixed(2)
+                playerPreferences.playerSpeedLongPress().delete()
+                viewModel.mpv.setPropertyDouble("speed", defaultSpeed.toDouble())
+            },
             // ANZ <--
             sleepTimerTimeRemaining = sleepTimerTimeRemaining,
             onStartSleepTimer = viewModel::startTimer,

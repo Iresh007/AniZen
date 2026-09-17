@@ -250,14 +250,14 @@ class PlayerActivity : BaseActivity() {
 
             viewModel.updateIsLoadingHosters(false)
 
-            lifecycleScope.launch {
-                viewModel.loadHosters(
-                    source = viewModel.currentSource.value!!,
-                    hosterList = initResult.first.hosterList ?: emptyList(),
-                    hosterIndex = initResult.first.videoIndex.first,
-                    videoIndex = initResult.first.videoIndex.second,
-                )
-            }
+            // ANZ -->
+            viewModel.loadHosters(
+                source = viewModel.currentSource.value!!,
+                hosterList = initResult.first.hosterList ?: emptyList(),
+                hosterIndex = initResult.first.videoIndex.first,
+                videoIndex = initResult.first.videoIndex.second,
+            )
+            // ANZ <--
         }
 
         setIntent(intent)
@@ -280,16 +280,7 @@ class PlayerActivity : BaseActivity() {
         setupMediaSession()
         setupPlayerOrientation()
 
-        // ANZ -->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-            powerManager?.addThermalStatusListener { status ->
-                if (status >= android.os.PowerManager.THERMAL_STATUS_SEVERE) {
-                    player.checkAdaptiveScaling(Long.MAX_VALUE)
-                }
-            }
-        }
-        // ANZ <--
+
 
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             runOnUiThread {
@@ -371,17 +362,7 @@ class PlayerActivity : BaseActivity() {
         // <-- Cast
 
         setContent {
-            // ANZ -->
-            val uiPreferences = remember { Injekt.get<UiPreferences>() }
-            val dynamicPlayerTheme by uiPreferences.dynamicPlayerTheme().collectAsStatePref()
-            val anime by viewModel.currentAnime.collectAsState()
-            val vibrantColors by CoverColorObserver.vibrantColors.collectAsState()
-            val vibrantColor = anime?.let { vibrantColors[it.id] ?: it.asAnimeCover().vibrantCoverColor }
-            DynamicTachiyomiTheme(
-                colorSeed = vibrantColor,
-                enabled = dynamicPlayerTheme,
-            ) {
-            // ANZ <--
+            TachiyomiTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         factory = { player },
@@ -729,13 +710,9 @@ class PlayerActivity : BaseActivity() {
 
     // A bunch of observers
 
+    @Suppress("unused")
     internal fun onObserverEvent(property: String, value: Long) {
         if (player.isExiting) return
-        // ANZ -->
-        when (property) {
-            "vo-delayed-frame-count" -> player.checkAdaptiveScaling(value)
-        }
-        // ANZ <--
     }
 
     @Suppress("unused")
@@ -889,7 +866,8 @@ class PlayerActivity : BaseActivity() {
 
     private fun setupPlayerOrientation() {
         if (player.isExiting) return
-        requestedOrientation = when (playerPreferences.defaultPlayerOrientationType().get()) {
+        // ANZ -->
+        val target = when (playerPreferences.defaultPlayerOrientationType().get()) {
             PlayerOrientation.Free -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
             PlayerOrientation.Video -> if ((player.getVideoOutAspect() ?: 0.0) > 1.0) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -904,6 +882,10 @@ class PlayerActivity : BaseActivity() {
             PlayerOrientation.ReverseLandscape -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
             PlayerOrientation.SensorLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
+        if (requestedOrientation != target) {
+            requestedOrientation = target
+        }
+        // ANZ <--
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -1075,7 +1057,8 @@ class PlayerActivity : BaseActivity() {
         viewModel.isLoading.update { _ -> true }
         viewModel.resetHosterState()
 
-        lifecycleScope.launch {
+        // ANZ -->
+        lifecycleScope.launchIO {
             viewModel.updateIsLoadingEpisode(true)
             viewModel.updateIsLoadingHosters(true)
             viewModel.cancelHosterVideoLinksJob()
@@ -1096,12 +1079,14 @@ class PlayerActivity : BaseActivity() {
                 else -> {
                     if (switchMethod.hosterList != null) {
                         when {
-                            switchMethod.hosterList.isEmpty() -> setInitialEpisodeError(
-                                PlayerViewModel.ExceptionWithStringResource(
-                                    "Hoster list is empty",
-                                    MR.strings.no_hosters,
-                                ),
-                            )
+                            switchMethod.hosterList.isEmpty() -> withUIContext {
+                                setInitialEpisodeError(
+                                    PlayerViewModel.ExceptionWithStringResource(
+                                        "Hoster list is empty",
+                                        MR.strings.no_hosters,
+                                    ),
+                                )
+                            }
                             else -> {
                                 viewModel.loadHosters(
                                     source = switchMethod.source,
@@ -1121,13 +1106,7 @@ class PlayerActivity : BaseActivity() {
                 }
             }
         }
-
-        viewModel.updateHasPreviousEpisode(
-            viewModel.getCurrentEpisodeIndex() != 0,
-        )
-        viewModel.updateHasNextEpisode(
-            viewModel.getCurrentEpisodeIndex() != viewModel.currentPlaylist.value.size - 1,
-        )
+        // ANZ <--
     }
 
     fun setVideo(video: Video?, position: Long? = null) {
@@ -1447,22 +1426,10 @@ class PlayerActivity : BaseActivity() {
 
         setMpvOptions()
         setMpvMediaTitle()
-        setupPlayerOrientation()
-
         // ANZ -->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-            powerManager?.addThermalStatusListener { status ->
-                if (status >= android.os.PowerManager.THERMAL_STATUS_SEVERE) {
-                    player.checkAdaptiveScaling(Long.MAX_VALUE)
-                }
-            }
-        }
+        runOnUiThread { setupPlayerOrientation() }
         // ANZ <--
         setupChapters()
-        // ANZ -->
-        viewModel.isLoading.update { false }
-        // ANZ <--
         viewModel.checkFileLoaded()
 
         // aniSkip stuff

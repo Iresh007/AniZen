@@ -228,4 +228,14 @@
 
     <string name="action_clear_anime">Clear anime</string>
     <string name="episodes_from_database">Episodes &amp; History from Database</string>
+
+    <!-- Subtitle ASS Override -->
+    <string name="player_sheets_subtitles_ass_no">No</string>
+    <string name="player_sheets_subtitles_ass_yes">Yes</string>
+    <string name="player_sheets_subtitles_ass_scale">Scale</string>
+    <string name="player_sheets_subtitles_ass_force">Force</string>
+    <string name="player_sheets_subtitles_ass_strip">Strip</string>
+
+    <!-- Playback Speed -->
+    <string name="player_sheets_speed_long_press">Long press speed</string>
 </resources>

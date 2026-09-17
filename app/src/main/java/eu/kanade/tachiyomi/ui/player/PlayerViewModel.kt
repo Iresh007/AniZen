@@ -81,6 +81,7 @@ import eu.kanade.tachiyomi.ui.player.domain.TrackSelect
 import eu.kanade.tachiyomi.ui.player.loader.EpisodeLoader
 import eu.kanade.tachiyomi.ui.player.loader.HosterLoader
 import eu.kanade.tachiyomi.ui.player.settings.AudioPreferences
+import eu.kanade.tachiyomi.ui.player.settings.DecoderPreferences
 import eu.kanade.tachiyomi.ui.player.settings.GesturePreferences
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import eu.kanade.tachiyomi.ui.player.settings.SubtitlePreferences
@@ -100,6 +101,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -109,8 +111,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
@@ -118,7 +122,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -191,24 +194,16 @@ class PlayerViewModel @JvmOverloads constructor(
     private val syncPreferences: SyncPreferences = Injekt.get(),
     // ANZ -->
     private val animeFillerListFetcher: AnimeFillerListFetcher = AnimeFillerListFetcher(),
+    private val decoderPreferences: DecoderPreferences = Injekt.get(),
     // ANZ <--
 ) : AndroidViewModel(context) {
 
     val cachePath: String = context.applicationContext.cacheDir.path
     val mpv = MPV(context.applicationContext) {
-        // ANZ -->
-        val configDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-            storageManager.getMPVConfigDirectory()?.filePath ?: context.filesDir.resolve(MPV_DIR).toString()
-        } else {
-            context.filesDir.resolve(MPV_DIR).toString()
-        }
-        // ANZ <--
         it.setOptionString("config", "yes")
-        it.setOptionString("config-dir", configDir)
+        it.setOptionString("config-dir", context.filesDir.resolve(MPV_DIR).toString())
         it.setOptionString("gpu-shader-cache-dir", cachePath)
         it.setOptionString("icc-cache-dir", cachePath)
-        it.setOptionString("idle", "yes")
-        it.setOptionString("force-window", "no")
         it.setOptionString("keep-open", "yes")
     }
 
@@ -298,6 +293,9 @@ class PlayerViewModel @JvmOverloads constructor(
     val paused: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("pause")
     val pos: kotlinx.coroutines.flow.StateFlow<Int?> = mpv.propFlow<Int>("time-pos")
     val duration: kotlinx.coroutines.flow.StateFlow<Int?> = mpv.propFlow<Int>("duration")
+    // ANZ -->
+    val demuxerCacheTime: kotlinx.coroutines.flow.StateFlow<Float?> = mpv.propFlow<Float>("demuxer-cache-time")
+    // ANZ <--
 
     val currentVolume = MutableStateFlow(audioManager.getVolume())
     // ANZ -->
@@ -311,12 +309,40 @@ class PlayerViewModel @JvmOverloads constructor(
         it?.toIntOrNull() ?: -1
     }.stateIn(viewModelScope, SharingStarted.Eagerly, -1)
 
-    val currentDecoder = MutableStateFlow(Decoder.Auto)
+    // ANZ -->
+    private val _manualDecoder = MutableStateFlow<Decoder?>(null)
+    val currentDecoder = combine(
+        mpv.propFlow<String>("hwdec-current"),
+        _manualDecoder,
+    ) { hwdecCurrent, manual ->
+        manual ?: when (hwdecCurrent) {
+            "mediacodec" -> Decoder.HWPlus
+            "mediacodec-copy" -> Decoder.HW
+            "no" -> Decoder.SW
+            else -> {
+                val configured = mpv.getPropertyString("hwdec")
+                when (configured) {
+                    "mediacodec" -> Decoder.HWPlus
+                    "mediacodec-copy" -> Decoder.HW
+                    "no" -> Decoder.SW
+                    "auto-copy" -> Decoder.AutoCopy
+                    else -> if (decoderPreferences.tryHWDecoding().get()) Decoder.HWPlus else Decoder.SW
+                }
+            }
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        if (decoderPreferences.tryHWDecoding().get()) Decoder.HWPlus else Decoder.SW,
+    )
+    // ANZ <--
     val currentMPVVolume = MutableStateFlow(100)
     val isSeekingUI = MutableStateFlow(false)
     val seekPosition = MutableStateFlow(0f)
     val isLongPressing = MutableStateFlow(false)
-    val playbackSpeed = MutableStateFlow(playerPreferences.playerSpeed().get())
+    // ANZ -->
+    val playbackSpeed: kotlinx.coroutines.flow.StateFlow<Float?> = mpv.propFlow<Float>("speed")
+    // ANZ <--
     val readAhead = MutableStateFlow(0f)
     val videoZoom = MutableStateFlow(0f)
     val videoPanX = MutableStateFlow(0f)
@@ -332,6 +358,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val chapters = mpv.propFlow<MPVNode>("chapter-list")
         .map { (it?.toObject<List<ChapterNode>>(json) ?: persistentListOf()).map { it.toSegment() }.toImmutableList() }
+        // ANZ -->
+        .flowOn(Dispatchers.Default)
+        // ANZ <--
 
     val currentChapter = chapters.combine(mpv.propFlow<Int>("chapter")) { list, idx ->
         idx?.let { list.getOrNull(it) }
@@ -339,6 +368,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     val pausedForCache: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("paused-for-cache")
     val coreIdle: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("core-idle")
+    // ANZ -->
+    val seeking: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("seeking")
+    // ANZ <--
     val isLoadingTracks = MutableStateFlow(false)
 
     private val _thumbnailImage = MutableStateFlow<ImageBitmap?>(null)
@@ -361,6 +393,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     ?: persistentListOf()
                 ).toImmutableList()
         }
+        // ANZ -->
+        .flowOn(Dispatchers.Default)
+        // ANZ <--
 
     val audioTracks = mpv.propFlow<MPVNode>("track-list")
         .map { node ->
@@ -371,6 +406,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     ?: persistentListOf()
                 ).toImmutableList()
         }
+        // ANZ -->
+        .flowOn(Dispatchers.Default)
+        // ANZ <--
 
     private val _skipIntroText = MutableStateFlow<String?>(null)
     val skipIntroText = _skipIntroText.asStateFlow()
@@ -410,15 +448,6 @@ class PlayerViewModel @JvmOverloads constructor(
     private val _fontList = MutableStateFlow<ImmutableList<String>>(persistentListOf())
     val fontList = _fontList.asStateFlow()
 
-    // ANK -->
-    private val unfilteredEpisodeList by lazy {
-        val anime = currentAnime.value ?: return@lazy emptyList()
-        runBlocking {
-            getEpisodesByAnimeId.await(anime.id)
-        }
-    }
-    // ANK <--
-
     init {
         viewModelScope.launchIO {
             subtitlePreferences.subtitleSystemFonts().changes().collectLatest {
@@ -454,16 +483,6 @@ class PlayerViewModel @JvmOverloads constructor(
             .launchIn(viewModelScope)
 
         // ANZ -->
-        mpv.propFlow<Float>("speed")
-            .filterNotNull()
-            .onEach { speed -> playbackSpeed.update { speed } }
-            .launchIn(viewModelScope)
-
-        mpv.propFlow<Float>("demuxer-cache-time")
-            .filterNotNull()
-            .onEach { cache -> readAhead.update { cache } }
-            .launchIn(viewModelScope)
-
         viewModelScope.launchIO {
             try {
                 currentAnime.collect { anime ->
@@ -487,6 +506,9 @@ class PlayerViewModel @JvmOverloads constructor(
             }
         }
         // ANK <--
+        // ANZ -->
+        mpv.setPropertyInt("user-data/current-anime/intro-length", getAnimeSkipIntroLength())
+        // ANZ <--
     }
 
     /**
@@ -577,6 +599,9 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun clearTracks() {
+        // ANZ -->
+        _manualDecoder.update { null }
+        // ANZ <--
         hasLoadedTracks.update { _ -> false }
         // ANK -->
         clearLoadedTrackStates()
@@ -653,9 +678,11 @@ class PlayerViewModel @JvmOverloads constructor(
             updateSubtitleTrackAt(idx) {
                 it.copy(id = track.id, state = TrackState.Loaded)
             }
+            // ANZ -->
+            selectSubById(track.id)
             hasLoadedSubs.update { _ -> true }
             checkFileLoaded()
-            selectSubById(track.id)
+            // ANZ <--
         }
 
         externalAudio.forEach { track ->
@@ -673,9 +700,11 @@ class PlayerViewModel @JvmOverloads constructor(
             updateAudioTrackAt(idx) {
                 it.copy(id = track.id, state = TrackState.Loaded)
             }
+            // ANZ -->
+            selectAudioById(track.id)
             hasLoadedAudio.update { _ -> true }
             checkFileLoaded()
-            selectAudioById(track.id)
+            // ANZ <--
         }
     }
 
@@ -1712,8 +1741,10 @@ class PlayerViewModel @JvmOverloads constructor(
      * Episode list for the active anime. It's retrieved lazily and should be accessed for the first
      * time in a background thread to avoid blocking the UI.
      */
-    private fun initEpisodeList(anime: Anime): List<Episode> {
-        val episodes = runBlocking { getEpisodesByAnimeId.await(anime.id) }
+    // ANZ -->
+    private suspend fun initEpisodeList(anime: Anime): List<Episode> {
+        val episodes = getEpisodesByAnimeId.await(anime.id)
+    // ANZ <--
 
         return episodes
             .sortedWith(getEpisodeSort(anime, sortDescending = false))
@@ -1772,7 +1803,9 @@ class PlayerViewModel @JvmOverloads constructor(
         pendingVideoFallbackMutex.withLock {
             if (!hasPendingVideoFallback.get()) return
 
-            val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+            // ANZ -->
+            val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value, getEffectiveDefaultStreamSelector())
+            // ANZ <--
             val loaded = if (hosterIdx == -1) {
                 false
             } else {
@@ -1836,6 +1869,14 @@ class PlayerViewModel @JvmOverloads constructor(
                 }
             }
 
+            // ANZ -->
+            val defaultSelector = if (hosterIndex == -1) {
+                getEffectiveDefaultStreamSelector()
+            } else {
+                ""
+            }
+            // ANZ <--
+
             try {
                 coroutineScope {
                     hosterList.mapIndexed { hosterIdx, hoster ->
@@ -1855,23 +1896,41 @@ class PlayerViewModel @JvmOverloads constructor(
                                     }
                                 }
 
-                                val prefIndex = hosterState.videoList.indexOfFirst { it.preferred }
-                                if (prefIndex != -1 && hosterIndex == -1) {
-                                    if (hasFoundPreferredVideo.compareAndSet(false, true)) {
-                                        if (selectedHosterVideoIndex.value == Pair(-1, -1)) {
-                                            val success =
-                                                loadVideo(
-                                                    source,
-                                                    hosterState.videoList[prefIndex],
-                                                    hosterIdx,
-                                                    prefIndex,
-                                                )
-                                            if (!success) {
-                                                hasFoundPreferredVideo.set(false)
+                                // ANZ -->
+                                if (hosterIndex == -1) {
+                                    if (defaultSelector.isNotBlank()) {
+                                        val ranked = DefaultStreamSelector.findRankedInHosters(defaultSelector, listOf(hosterState))
+                                        ranked.firstOrNull()?.let { (_, vIdx) ->
+                                            hosterState.videoList.getOrNull(vIdx)?.let { video ->
+                                                if (hasFoundPreferredVideo.compareAndSet(false, true)) {
+                                                    val success = loadVideo(source, video, hosterIdx, vIdx)
+                                                    if (!success) {
+                                                        hasFoundPreferredVideo.set(false)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val prefIndex = hosterState.videoList.indexOfFirst { it.preferred }
+                                        if (prefIndex != -1) {
+                                            if (hasFoundPreferredVideo.compareAndSet(false, true)) {
+                                                if (selectedHosterVideoIndex.value == Pair(-1, -1)) {
+                                                    val success =
+                                                        loadVideo(
+                                                            source,
+                                                            hosterState.videoList[prefIndex],
+                                                            hosterIdx,
+                                                            prefIndex,
+                                                        )
+                                                    if (!success) {
+                                                        hasFoundPreferredVideo.set(false)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
+                                // ANZ <--
                             }
 
                             // ANK --> A postponed selection may be waiting on this hoster
@@ -1881,7 +1940,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     }.awaitAll()
 
                     if (hasFoundPreferredVideo.compareAndSet(false, true)) {
-                        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+                        // ANZ -->
+                        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value, defaultSelector)
+                        // ANZ <--
                         if (hosterIdx == -1) {
                             throw ExceptionWithStringResource("No available videos", MR.strings.no_available_videos)
                         }
@@ -1928,7 +1989,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     fun loadBestVideo(): Boolean {
         val source = currentSource.value ?: return false
-        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+        // ANZ -->
+        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value, getEffectiveDefaultStreamSelector())
+        // ANZ <--
         if (hosterIdx == -1) {
             // ANK -->
             // A hoster still resolving (Loading) might still produce a usable candidate,
@@ -2030,6 +2093,9 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun onVideoClicked(hosterIndex: Int, videoIndex: Int) {
+        // ANZ -->
+        setDefaultStreamSelector(hosterIndex, videoIndex)
+        // ANZ <--
         val hosterState = _hosterState.value[hosterIndex] as? HosterState.Ready
         val video = hosterState?.videoList
             ?.getOrNull(videoIndex)
@@ -2101,6 +2167,10 @@ class PlayerViewModel @JvmOverloads constructor(
 
         _currentEpisode.update { _ -> chosenEpisode }
         updateEpisode(chosenEpisode)
+        // ANZ -->
+        _hasPreviousEpisode.update { _ -> getCurrentEpisodeIndex() != 0 }
+        _hasNextEpisode.update { _ -> getCurrentEpisodeIndex() != currentPlaylist.value.size - 1 }
+        // ANZ <--
 
         return withIOContext {
             try {
@@ -2679,15 +2749,17 @@ class PlayerViewModel @JvmOverloads constructor(
         return DefaultStreamPreferenceStore(playerPreferences).getEffectiveSelector(currentAnime.value?.id)
     }
 
+    // ANZ -->
     fun updateDecoder(decoder: Decoder) {
-        currentDecoder.update { decoder }
+        _manualDecoder.update { decoder }
         mpv.setPropertyString("hwdec", decoder.value)
     }
 
     fun getDecoder() {
         val active = mpv.getPropertyString("hwdec-current") ?: "no"
-        currentDecoder.update { getDecoderFromValue(active) }
+        _manualDecoder.update { getDecoderFromValue(active) }
     }
+    // ANZ <--
 
     fun updateReadAhead(value: Long) {
         val floatVal = value.toFloat()
