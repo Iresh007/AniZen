@@ -87,11 +87,11 @@ enum class SubtitleAssOverride(
     val value: String,
     val titleRes: dev.icerock.moko.resources.StringResource,
 ) {
-    No("no", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_no),
-    Yes("yes", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_yes),
-    Scale("scale", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_scale),
-    Force("force", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_force),
-    Strip("strip", tachiyomi.i18n.animiru.AMR.strings.player_sheets_subtitles_ass_strip),
+    No("no", tachiyomi.i18n.ank.AMR.strings.player_sheets_subtitles_ass_no),
+    Yes("yes", tachiyomi.i18n.ank.AMR.strings.player_sheets_subtitles_ass_yes),
+    Scale("scale", tachiyomi.i18n.ank.AMR.strings.player_sheets_subtitles_ass_scale),
+    Force("force", tachiyomi.i18n.ank.AMR.strings.player_sheets_subtitles_ass_force),
+    Strip("strip", tachiyomi.i18n.ank.AMR.strings.player_sheets_subtitles_ass_strip),
     ;
 
     companion object {
