@@ -45,6 +45,7 @@ import eu.kanade.presentation.player.components.PlayerSheet
 import eu.kanade.presentation.player.components.SliderItem
 import eu.kanade.presentation.player.components.SwitchPreference
 import tachiyomi.i18n.MR
+import tachiyomi.i18n.ank.AMR
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.math.pow
@@ -61,6 +62,12 @@ fun PlaybackSpeedSheet(
     onAddSpeedPreset: (Float) -> Unit,
     onRemoveSpeedPreset: (Float) -> Unit,
     onResetPresets: () -> Unit,
+    longPressSpeed: Float,
+    longPressSpeedPresets: List<Float>,
+    onLongPressSpeedChange: (Float) -> Unit,
+    onAddLongPressSpeedPreset: (Float) -> Unit,
+    onRemoveLongPressSpeedPreset: (Float) -> Unit,
+    onResetLongPressPresets: () -> Unit,
     onMakeDefault: (Float) -> Unit,
     onResetDefault: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -95,7 +102,7 @@ fun PlaybackSpeedSheet(
                         .weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
                 ) {
-                    items(speedPresets, key = { it }) {
+                    items(speedPresets, key = { "speed-$it" }) {
                         InputChip(
                             selected = speed.toFixed(2) == it.toFixed(2),
                             onClick = { onSpeedChange(it) },
@@ -116,6 +123,52 @@ fun PlaybackSpeedSheet(
                     Icon(Icons.Default.Add, null)
                 }
             }
+
+            SliderItem(
+                label = stringResource(AMR.strings.player_sheets_speed_long_press),
+                value = longPressSpeed,
+                valueText = stringResource(MR.strings.player_speed, longPressSpeed),
+                onChange = onLongPressSpeedChange,
+                max = 6f,
+                min = 0.01f,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MaterialTheme.padding.medium),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.medium),
+            ) {
+                FilledTonalIconButton(onClick = onResetLongPressPresets) {
+                    Icon(Icons.Default.RestartAlt, null)
+                }
+                LazyRow(
+                    modifier = Modifier
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
+                ) {
+                    items(longPressSpeedPresets, key = { "lp-speed-$it" }) {
+                        InputChip(
+                            selected = longPressSpeed.toFixed(2) == it.toFixed(2),
+                            onClick = { onLongPressSpeedChange(it) },
+                            label = { Text(stringResource(MR.strings.player_speed, it)) },
+                            modifier = Modifier
+                                .animateItem(),
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Default.Close,
+                                    null,
+                                    modifier = Modifier.clickable { onRemoveLongPressSpeedPreset(it.toFixed(2)) },
+                                )
+                            },
+                        )
+                    }
+                }
+                FilledTonalIconButton(onClick = { onAddLongPressSpeedPreset(longPressSpeed.toFixed(2)) }) {
+                    Icon(Icons.Default.Add, null)
+                }
+            }
+
             SwitchPreference(
                 value = pitchCorrection,
                 onValueChange = onPitchCorrectionChange,

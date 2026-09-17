@@ -235,4 +235,7 @@
     <string name="player_sheets_subtitles_ass_scale">Scale</string>
     <string name="player_sheets_subtitles_ass_force">Force</string>
     <string name="player_sheets_subtitles_ass_strip">Strip</string>
+
+    <!-- Playback Speed -->
+    <string name="player_sheets_speed_long_press">Long press speed</string>
 </resources>

@@ -789,6 +789,8 @@ fun PlayerControls(
         // ANZ -->
         val playbackSpeed by viewModel.playbackSpeed.collectAsState()
         val speedPresets by playerPreferences.speedPresets().collectAsState()
+        val longPressSpeed by playerPreferences.playerSpeedLongPress().collectAsState()
+        val longPressSpeedPresets by playerPreferences.longPressSpeedPresets().collectAsState()
         val pitchCorrection by audioPreferences.enablePitchCorrection().collectAsState()
         // ANZ <--
         val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
@@ -842,8 +844,15 @@ fun PlayerControls(
             onAddSpeedPreset = { playerPreferences.speedPresets() += it.toFixed(2).toString() },
             onRemoveSpeedPreset = { playerPreferences.speedPresets() -= it.toFixed(2).toString() },
             onResetSpeedPresets = playerPreferences.speedPresets()::delete,
+            longPressSpeed = longPressSpeed,
+            longPressSpeedPresets = longPressSpeedPresets.map { it.toFloat() }.sorted().toPersistentList(),
+            onLongPressSpeedChange = { playerPreferences.playerSpeedLongPress().set(it.toFixed(2)) },
+            onAddLongPressSpeedPreset = { playerPreferences.longPressSpeedPresets() += it.toFixed(2).toString() },
+            onRemoveLongPressSpeedPreset = { playerPreferences.longPressSpeedPresets() -= it.toFixed(2).toString() },
+            onResetLongPressSpeedPresets = playerPreferences.longPressSpeedPresets()::delete,
             onResetDefaultSpeed = {
                 val defaultSpeed = playerPreferences.playerSpeed().deleteAndGet().toFixed(2)
+                playerPreferences.playerSpeedLongPress().delete()
                 viewModel.mpv.setPropertyDouble("speed", defaultSpeed.toDouble())
             },
             // ANZ <--
