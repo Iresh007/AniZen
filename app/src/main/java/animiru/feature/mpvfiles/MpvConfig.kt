@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
+import `is`.xyz.mpv.MPV
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.runBlocking
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
@@ -44,6 +46,17 @@ class MpvConfig(
 
     private var copyJob: Job? = null
 
+    fun provisionSync(mpvDir: UniFile = getMpvDir()) {
+        try {
+            // Drop any stale fonts.conf to prevent broken font fallbacks and startup stutters
+            mpvDir.findFile("fonts.conf")?.delete()
+            copyUserFiles(mpvDir)
+            copyAssets(mpvDir)
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to provision mpv files" }
+        }
+    }
+
     fun copyFiles() {
         if (playerSessions.get() > 0 || copyJob?.isActive == true) {
             copyPending.set(true)
@@ -55,10 +68,10 @@ class MpvConfig(
                 copyPending.set(false)
                 try {
                     val mpvDir = getMpvDir()
+                    mpvDir.findFile("fonts.conf")?.delete()
                     copyUserFiles(mpvDir)
-                    copyFontsDirectory(mpvDir)
+                    copyFontsDirectory()
                     copyAssets(mpvDir)
-                    writeFontsConf(context, mpvDir)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -91,7 +104,7 @@ class MpvConfig(
         return UniFile.fromFile(context.filesDir)!!.createDirectory(MPV_DIR)!!
     }
 
-    private suspend fun copyUserFiles(mpvDir: UniFile) {
+    private fun copyUserFiles(mpvDir: UniFile) {
         // First, delete all present scripts
         val scriptsDir = deleteAndGet(mpvDir, MPV_SCRIPTS_DIR)
         val scriptOptsDir = deleteAndGet(mpvDir, MPV_SCRIPTS_OPTS_DIR)
@@ -104,7 +117,14 @@ class MpvConfig(
             copyDirectoryContents(storageManager.getShadersDirectory(), shadersDir)
         }
 
-        val buttons = getCustomButtons.getAll()
+        val buttons = runBlocking(Dispatchers.IO) {
+            try {
+                getCustomButtons.getAll()
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR, e) { "Failed to load custom buttons" }
+                emptyList()
+            }
+        }
         setupCustomButtons(buttons)
 
         // Copy over the bridge file
@@ -116,8 +136,8 @@ class MpvConfig(
         }
     }
 
-    fun setupCustomButtons(buttons: List<CustomButton>) {
-        val scriptsDir = getMpvDir().createDirectory(MPV_SCRIPTS_DIR)!!
+    fun setupCustomButtons(buttons: List<CustomButton>): UniFile? {
+        val scriptsDir = getMpvDir().createDirectory(MPV_SCRIPTS_DIR) ?: return null
         val primaryButtonId = buttons.firstOrNull { it.isFavorite }?.id ?: 0L
 
         val customButtonsContent = buildString {
@@ -152,11 +172,17 @@ class MpvConfig(
         file?.openOutputStream()?.bufferedWriter()?.use {
             it.write(customButtonsContent)
         }
+        return file
     }
 
-    private suspend fun copyFontsDirectory(mpvDir: UniFile) {
+    suspend fun copyFontsDirectory(mpv: MPV? = null) {
+        val mpvDir = getMpvDir()
         val fontsDirectory = deleteAndGet(mpvDir, MPV_FONTS_DIR)
         copyDirectoryContents(storageManager.getFontsDirectory(), fontsDirectory)
+        fontsDirectory.filePath?.let {
+            mpv?.setPropertyString("sub-fonts-dir", it)
+            mpv?.setPropertyString("osd-fonts-dir", it)
+        }
     }
 
     private fun copyAssets(mpvDir: UniFile) {
@@ -184,48 +210,13 @@ class MpvConfig(
         }
     }
 
-    private fun writeFontsConf(context: Context, mpvDir: UniFile) {
-        val parts = listOfNotNull(
-            "<fontconfig>",
-            "<dir>/system/fonts/</dir>",
-            "<dir>/product/fonts/</dir>",
-            mpvDir.createDirectory(MPV_FONTS_DIR)?.filePath?.let { filePath -> "<dir>$filePath</dir>" },
-            "<cachedir>${context.cacheDir.path}</cachedir>",
-            "<alias><family>serif</family>",
-            "<prefer><family>Noto Serif</family></prefer>",
-            "</alias>",
-            "<alias><family>Sans Serif</family>",
-            "<prefer>",
-            "<family>Roboto</family>",
-            "<family>Noto Sans</family>",
-            "</prefer>",
-            "</alias>",
-            "<alias><family>monospace</family>",
-            "<prefer><family>Droid Sans Mono</family></prefer>",
-            "</alias>",
-            "</fontconfig>",
-        ).toMutableList()
-        try {
-            val file = mpvDir.createFile("fonts.conf")
-            file?.openOutputStream()?.bufferedWriter()?.use {
-                it.write(parts.joinToString("\n"))
-            }
-        } catch (e: IOException) {
-            logcat(LogPriority.ERROR, e) { "Failed to write fonts.conf" }
-        }
-    }
-
     private fun deleteAndGet(parent: UniFile, name: String): UniFile {
         parent.createDirectory(name)?.delete()
         return parent.createDirectory(name)!!
     }
 
-    private suspend fun copyDirectoryContents(sourceDir: UniFile?, destDir: UniFile) {
+    private fun copyDirectoryContents(sourceDir: UniFile?, destDir: UniFile) {
         sourceDir?.listFiles()?.forEach { file ->
-            if (!currentCoroutineContext().isActive) {
-                throw CancellationException()
-            }
-
             val outFile = destDir.createFile(file.name) ?: return@forEach
             file.openInputStream().use { input ->
                 outFile.openOutputStream().use { output ->

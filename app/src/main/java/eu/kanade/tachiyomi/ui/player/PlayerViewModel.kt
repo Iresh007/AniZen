@@ -302,6 +302,9 @@ class PlayerViewModel @JvmOverloads constructor(
     val paused: kotlinx.coroutines.flow.StateFlow<Boolean?> = mpv.propFlow<Boolean>("pause")
     val pos: kotlinx.coroutines.flow.StateFlow<Int?> = mpv.propFlow<Int>("time-pos")
     val duration: kotlinx.coroutines.flow.StateFlow<Int?> = mpv.propFlow<Int>("duration")
+    // ANZ -->
+    val demuxerCacheTime: kotlinx.coroutines.flow.StateFlow<Float?> = mpv.propFlow<Float>("demuxer-cache-time")
+    // ANZ <--
 
     val currentVolume = MutableStateFlow(audioManager.getVolume())
     // ANZ -->
@@ -513,6 +516,9 @@ class PlayerViewModel @JvmOverloads constructor(
             }
         }
         // ANK <--
+        // ANZ -->
+        mpv.setPropertyInt("user-data/current-anime/intro-length", getAnimeSkipIntroLength())
+        // ANZ <--
     }
 
     /**

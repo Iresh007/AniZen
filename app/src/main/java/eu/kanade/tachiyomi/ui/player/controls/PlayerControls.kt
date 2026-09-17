@@ -509,7 +509,9 @@ fun PlayerControls(
                         }
 
                         val invertDuration by playerPreferences.invertDuration().collectAsState()
-                    val readAhead by viewModel.mpv.propFlow<Float>("demuxer-cache-time").collectAsState()
+                        // ANZ -->
+                        val readAhead by viewModel.demuxerCacheTime.collectAsState()
+                        // ANZ <--
                     val preciseSeeking by gesturePreferences.playerSmoothSeek().collectAsState()
 
                     var wasPlayerAlreadyPause by remember { mutableStateOf(false) }

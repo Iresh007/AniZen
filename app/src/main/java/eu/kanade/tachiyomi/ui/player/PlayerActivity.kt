@@ -608,18 +608,17 @@ class PlayerActivity : BaseActivity() {
         val mpvInputFile = mpvDir.createFile("input.conf")!!
         advancedPlayerPreferences.mpvInput().get().let { mpvInputFile.writeText(it) }
 
-        // ANK -->
-        // mpv reads scripts/, script-opts/ and shaders/ during init, so it must not start while
-        // MpvConfig is midway through deleting and rewriting them.
-        val copied = runBlocking {
-            withTimeoutOrNull(MPV_COPY_AWAIT_TIMEOUT_MS.milliseconds) { mpvConfig.awaitCopy() } != null
-        }
-        if (!copied) {
-            logcat(LogPriority.WARN) { "Timed out waiting for the mpv config copy; initializing anyway" }
-        }
-        // ANK <--
+        // ANZ -->
+        mpvConfig.provisionSync(mpvDir)
+        // ANZ <--
 
         player.init(mpv)
+
+        // ANZ -->
+        lifecycleScope.launchIO {
+            mpvConfig.copyFontsDirectory(mpv)
+        }
+        // ANZ <--
 
         val showBlackBars = if (subtitlePreferences.subtitleBlackBars().get()) "yes" else "no"
         mpv.setOptionString("sub-ass-force-margins", showBlackBars)
