@@ -25,7 +25,28 @@ class HosterLoader {
          *
          * @return the indices of the hoster & video
          */
-        fun selectBestVideo(hosterState: List<HosterState>): Pair<Int, Int> {
+        // ANZ -->
+        fun selectBestVideo(hosterState: List<HosterState>, defaultSelector: String = ""): Pair<Int, Int> {
+            if (defaultSelector.isNotBlank()) {
+                val strictRanked = DefaultStreamSelector.findRankedInHosters(defaultSelector, hosterState)
+                for ((hIdx, vIdx) in strictRanked) {
+                    val ready = hosterState.getOrNull(hIdx) as? HosterState.Ready ?: continue
+                    val state = ready.videoState.getOrNull(vIdx) ?: continue
+                    if (state == Video.State.READY || state == Video.State.QUEUE) {
+                        return hIdx to vIdx
+                    }
+                }
+                val relaxedRanked = DefaultStreamSelector.findRankedInHostersRelaxed(defaultSelector, hosterState)
+                for ((hIdx, vIdx) in relaxedRanked) {
+                    val ready = hosterState.getOrNull(hIdx) as? HosterState.Ready ?: continue
+                    val state = ready.videoState.getOrNull(vIdx) ?: continue
+                    if (state == Video.State.READY || state == Video.State.QUEUE) {
+                        return hIdx to vIdx
+                    }
+                }
+            }
+            // ANZ <--
+
             val availableHosters = hosterState.withIndex()
                 .filter { (_, state) -> state is HosterState.Ready }
 

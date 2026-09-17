@@ -204,18 +204,19 @@ fun QualitySheet(
     }
 }
 
+// ANZ -->
 private fun buildDefaultVideoByHosterIndex(
     hosterState: List<HosterState>,
     defaultStreamSelector: String,
 ): Map<Int, Int> {
     if (defaultStreamSelector.isBlank()) return emptyMap()
-    val bestMatch = DefaultStreamSelector.findBestInHosters(defaultStreamSelector, hosterState)
-    return if (bestMatch != null) {
-        mapOf(bestMatch.first to bestMatch.second)
-    } else {
-        emptyMap()
-    }
+    return hosterState.mapIndexedNotNull { hosterIdx, state ->
+        if (state !is HosterState.Ready) return@mapIndexedNotNull null
+        val videoIdx = findDefaultVideoIndex(state.videoList, defaultStreamSelector, state.name)
+        if (videoIdx >= 0) hosterIdx to videoIdx else null
+    }.toMap()
 }
+// ANZ <--
 
 private fun findDefaultVideoIndex(
     videos: List<Video>,

@@ -1803,7 +1803,9 @@ class PlayerViewModel @JvmOverloads constructor(
         pendingVideoFallbackMutex.withLock {
             if (!hasPendingVideoFallback.get()) return
 
-            val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+            // ANZ -->
+            val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value, getEffectiveDefaultStreamSelector())
+            // ANZ <--
             val loaded = if (hosterIdx == -1) {
                 false
             } else {
@@ -1867,6 +1869,14 @@ class PlayerViewModel @JvmOverloads constructor(
                 }
             }
 
+            // ANZ -->
+            val defaultSelector = if (hosterIndex == -1) {
+                getEffectiveDefaultStreamSelector()
+            } else {
+                ""
+            }
+            // ANZ <--
+
             try {
                 coroutineScope {
                     hosterList.mapIndexed { hosterIdx, hoster ->
@@ -1886,23 +1896,41 @@ class PlayerViewModel @JvmOverloads constructor(
                                     }
                                 }
 
-                                val prefIndex = hosterState.videoList.indexOfFirst { it.preferred }
-                                if (prefIndex != -1 && hosterIndex == -1) {
-                                    if (hasFoundPreferredVideo.compareAndSet(false, true)) {
-                                        if (selectedHosterVideoIndex.value == Pair(-1, -1)) {
-                                            val success =
-                                                loadVideo(
-                                                    source,
-                                                    hosterState.videoList[prefIndex],
-                                                    hosterIdx,
-                                                    prefIndex,
-                                                )
-                                            if (!success) {
-                                                hasFoundPreferredVideo.set(false)
+                                // ANZ -->
+                                if (hosterIndex == -1) {
+                                    if (defaultSelector.isNotBlank()) {
+                                        val ranked = DefaultStreamSelector.findRankedInHosters(defaultSelector, listOf(hosterState))
+                                        ranked.firstOrNull()?.let { (_, vIdx) ->
+                                            hosterState.videoList.getOrNull(vIdx)?.let { video ->
+                                                if (hasFoundPreferredVideo.compareAndSet(false, true)) {
+                                                    val success = loadVideo(source, video, hosterIdx, vIdx)
+                                                    if (!success) {
+                                                        hasFoundPreferredVideo.set(false)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val prefIndex = hosterState.videoList.indexOfFirst { it.preferred }
+                                        if (prefIndex != -1) {
+                                            if (hasFoundPreferredVideo.compareAndSet(false, true)) {
+                                                if (selectedHosterVideoIndex.value == Pair(-1, -1)) {
+                                                    val success =
+                                                        loadVideo(
+                                                            source,
+                                                            hosterState.videoList[prefIndex],
+                                                            hosterIdx,
+                                                            prefIndex,
+                                                        )
+                                                    if (!success) {
+                                                        hasFoundPreferredVideo.set(false)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
+                                // ANZ <--
                             }
 
                             // ANK --> A postponed selection may be waiting on this hoster
@@ -1912,7 +1940,9 @@ class PlayerViewModel @JvmOverloads constructor(
                     }.awaitAll()
 
                     if (hasFoundPreferredVideo.compareAndSet(false, true)) {
-                        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+                        // ANZ -->
+                        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value, defaultSelector)
+                        // ANZ <--
                         if (hosterIdx == -1) {
                             throw ExceptionWithStringResource("No available videos", MR.strings.no_available_videos)
                         }
@@ -1959,7 +1989,9 @@ class PlayerViewModel @JvmOverloads constructor(
 
     fun loadBestVideo(): Boolean {
         val source = currentSource.value ?: return false
-        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+        // ANZ -->
+        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value, getEffectiveDefaultStreamSelector())
+        // ANZ <--
         if (hosterIdx == -1) {
             // ANK -->
             // A hoster still resolving (Loading) might still produce a usable candidate,
@@ -2061,6 +2093,9 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     fun onVideoClicked(hosterIndex: Int, videoIndex: Int) {
+        // ANZ -->
+        setDefaultStreamSelector(hosterIndex, videoIndex)
+        // ANZ <--
         val hosterState = _hosterState.value[hosterIndex] as? HosterState.Ready
         val video = hosterState?.videoList
             ?.getOrNull(videoIndex)
